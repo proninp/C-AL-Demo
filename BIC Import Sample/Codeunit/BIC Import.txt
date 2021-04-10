@@ -1,0 +1,266 @@
+OBJECT Codeunit 50000 BIC Import
+{
+  OBJECT-PROPERTIES
+  {
+    Date=10.04.21;
+    Time=16:22:52;
+    Modified=Yes;
+    Version List=PPS 2021.04.10;
+  }
+  PROPERTIES
+  {
+    OnRun=BEGIN
+            ReadZip('http://www.cbr.ru/s/newbik');
+          END;
+
+  }
+  CODE
+  {
+    VAR
+      ErrText001@1101495000 : TextConst 'ENU=The file name must not be empty!';
+      ErrText002@1101495001 : TextConst 'ENU=The URL must not be empty!';
+      ErrText003@1101495002 : TextConst 'ENU=The call to the web service failed.';
+      ErrText004@1101495003 : TextConst 'ENU=The web service returned an error message:\Status code: %1\Description: %2';
+      ErrText005@1101495004 : TextConst 'ENU=%1 table must be temporary.';
+      WebLinkCbr@1101495005 : TextConst 'ENU=http://www.cbr.ru/s/newbik';
+      ZipDirectory@1101495006 : TextConst 'ENU=SampleDir\BicZip.zip';
+      BicAttributeLabel@1101495007 : TextConst 'ENU=BIC';
+      ParticipantInfoLabel@1101495008 : TextConst 'ENU=ParticipantInfo';
+      AccountsLabel@1101495009 : TextConst 'ENU=Accounts';
+      BankDirectory@1101495010 : Record 12409;
+
+    LOCAL PROCEDURE ReadZip@1101495000(UrlLinkP@1101495004 : Text);
+    VAR
+      TempBlob@1101495007 : Record 99008535;
+      WebClient@1101495005 : DotNet "'System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Net.WebClient";
+      MemoryStream@1101495008 : DotNet "'mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.IO.MemoryStream";
+      Stream@1101495010 : DotNet "'mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.IO.Stream";
+      ResponseOutStream@1101495006 : OutStream;
+    BEGIN
+      CLEAR(TempBlob);
+      TempBlob.Blob.CREATEOUTSTREAM(ResponseOutStream);
+
+      WebClient := WebClient.WebClient;
+      MemoryStream := MemoryStream.MemoryStream(WebClient.DownloadData(UrlLinkP));
+      Stream := MemoryStream;
+      COPYSTREAM(ResponseOutStream, Stream);
+      UnzipResponse(ResponseOutStream);
+    END;
+
+    LOCAL PROCEDURE UnzipResponse@1101495001(ResponseOutStreamP@1101495002 : OutStream);
+    VAR
+      TempBlob@1101495006 : Record 99008535;
+      EntryList@1101495001 : DotNet "'mscorlib, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Collections.Generic.List`1";
+      Encoding@1101495005 : DotNet "'mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Text.Encoding";
+      ZipArchive@1101495004 : DotNet "'System.IO.Compression, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.IO.Compression.ZipArchive";
+      ZipArchiveEntry@1101495003 : DotNet "'System.IO.Compression, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.IO.Compression.ZipArchiveEntry";
+      Mode@1101495000 : DotNet "'System.IO.Compression, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.IO.Compression.ZipArchiveMode";
+      OutputStream@1101495007 : OutStream;
+      ResponseInStream@1101495008 : InStream;
+    BEGIN
+      Encoding := Encoding.Default;
+      Mode := Mode.Read;
+      ZipArchive := ZipArchive.ZipArchive(ResponseOutStreamP, Mode, FALSE, Encoding);
+      FOREACH ZipArchiveEntry IN ZipArchive.Entries() DO BEGIN
+        CLEAR(TempBlob);
+        TempBlob.Blob.CREATEOUTSTREAM(OutputStream, TEXTENCODING::UTF8);
+        ExtractZipEntry(ZipArchiveEntry, OutputStream);
+        TempBlob.Blob.CREATEINSTREAM(ResponseInStream, TEXTENCODING::UTF8);
+        ParseXML(ResponseInStream);
+      END;
+    END;
+
+    LOCAL PROCEDURE ExtractZipEntry@1101495003(VAR ZipArchiveEntryP@1101495000 : DotNet "'System.IO.Compression, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.IO.Compression.ZipArchiveEntry";OutputStream@1101495001 : OutStream);
+    VAR
+      ZipArchiveEntryStream@1101495002 : DotNet "'mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.IO.Stream";
+    BEGIN
+      ZipArchiveEntryStream := ZipArchiveEntryP.Open();
+      ZipArchiveEntryStream.CopyTo(OutputStream);
+      ZipArchiveEntryStream.Close();
+    END;
+
+    LOCAL PROCEDURE ParseXML@1101495005(ResponseStreamP@1101495000 : InStream);
+    VAR
+      XmlDocument@1101495001 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlDocument";
+      XmlElement@1101495002 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlElement";
+      Nodes@1101495005 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlNodeList";
+      Node@1101495006 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlNode";
+      XmlAttribute@1101495003 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlAttribute";
+    BEGIN
+      XmlDocument := XmlDocument.XmlDocument;
+      XmlDocument.Load(ResponseStreamP);
+      XmlElement := XmlDocument.DocumentElement;
+
+      FOREACH Node IN XmlElement.ChildNodes DO BEGIN
+        FOREACH XmlAttribute IN Node.Attributes DO
+          ParseBICDirectoryEntry(Node, XmlAttribute);
+      END;
+    END;
+
+    LOCAL PROCEDURE ParseBICDirectoryEntry@1101495002(VAR NodeV@1101495001 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlNode";VAR XmlAttributeV@1101495000 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlAttribute");
+    VAR
+      BankDirectory@1101495002 : Record 12409;
+      Node@1101495003 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlNode";
+      NodeName@1101495004 : Text;
+    BEGIN
+      IF XmlAttributeV.Name <> BicAttributeLabel THEN
+        EXIT;
+
+      IF BankDirectory.RECORDLEVELLOCKING THEN
+        BankDirectory.LOCKTABLE;
+
+      CreateBankDirectory(BankDirectory, XmlAttributeV.Value);
+      FOREACH Node IN NodeV.ChildNodes DO BEGIN
+        NodeName := Node.Name;
+        CASE NodeName OF
+          ParticipantInfoLabel:
+            ParseParticipantInfo(Node, BankDirectory);
+          AccountsLabel:
+            ParseAccounts(Node, BankDirectory);
+        END;
+      END;
+    END;
+
+    LOCAL PROCEDURE CreateBankDirectory@1101495004(VAR BankDirectoryV@1101495000 : Record 12409;BICValue@1101495001 : Text);
+    BEGIN
+      IF NOT BankDirectoryV.GET(BICValue) THEN BEGIN
+        BankDirectoryV.INIT;
+        BankDirectoryV.BIC := BICValue;
+        BankDirectoryV.INSERT;
+      END;
+    END;
+
+    LOCAL PROCEDURE ParseParticipantInfo@1101495006(VAR NodeV@1101495000 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlNode";VAR BankDirectoryV@1101495001 : Record 12409);
+    VAR
+      Attribute@1101495002 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlAttribute";
+    BEGIN
+      FOREACH Attribute IN NodeV.Attributes DO BEGIN
+        CASE Attribute.Name OF
+          'NameP':
+              BEGIN
+                  BankDirectoryV."Short Name" := COPYSTR(Attribute.Value, 1, MAXSTRLEN(BankDirectoryV."Short Name"));
+                  BankDirectoryV."Full Name" := COPYSTR(Attribute.Value, 1, MAXSTRLEN(BankDirectoryV."Full Name"));
+              END;
+          'Rgn':
+              BankDirectoryV."Region Code" := Attribute.Value;
+          'Ind':
+              BankDirectoryV."Post Code" := Attribute.Value;
+          'Tnp':
+              CASE TRUE OF
+                  LOWERCASE(Attribute.Value) IN ['£.', '£']:
+                      BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Gorod;
+                  LOWERCASE(Attribute.Value) IN ['―.', '―']:
+                      BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Poselok;
+                  LOWERCASE(Attribute.Value) IN ['α.', 'α']:
+                      BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Selo;
+                  LOWERCASE(Attribute.Value) IN ['―£β.', '―£β']:
+                      BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::"Poselok gorodskogo tipa";
+                  LOWERCASE(Attribute.Value) IN ['αβ-ζ ']:
+                      BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Stanica;
+                  LOWERCASE(Attribute.Value) IN [' γ«']:
+                      BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Aul;
+                  LOWERCASE(Attribute.Value) IN ['ΰ―.', 'ΰ―']:
+                      BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::"Rabochiy poselok";
+                  ELSE
+                      BankDirectoryV."Area Type" := 0; // unknown
+              END;
+          'Nnp':
+              BankDirectoryV."Area Name" := Attribute.Value;
+          'Adr':
+              BankDirectoryV.Address := COPYSTR(Attribute.Value, 1, MAXSTRLEN(BankDirectoryV.Address));
+          'DateIn':
+              BankDirectoryV."Date In" := ConvertDate(Attribute.Value);
+          'DateOut':
+              BankDirectoryV."Date Out" := ConvertDate(Attribute.Value);
+          'PtType':
+            CASE Attribute.Value OF
+              '00':
+                  BankDirectoryV.Type := BankDirectoryV.Type::GRKC;
+              '10':
+                  BankDirectoryV.Type := BankDirectoryV.Type::RKC;
+              '12':
+                  BankDirectoryV.Type := BankDirectoryV.Type::Bank;
+              '15':
+                  BankDirectoryV.Type := BankDirectoryV.Type::"Comm.Bank";
+              '16':
+                  BankDirectoryV.Type := BankDirectoryV.Type::"Sber.Bank";
+              '20':
+                  BankDirectoryV.Type := BankDirectoryV.Type::"Shar.Comm.Bank";
+              '30':
+                  BankDirectoryV.Type := BankDirectoryV.Type::"Private Comm.Bank";
+              '40':
+                  BankDirectoryV.Type := BankDirectoryV.Type::"Cooper.Bank";
+              '51':
+                  BankDirectoryV.Type := BankDirectoryV.Type::AgroPromBank;
+              '52':
+                  BankDirectoryV.Type := BankDirectoryV.Type::"Bank Filial";
+              '60':
+                  BankDirectoryV.Type := BankDirectoryV.Type::"Comm.Bamk Filial";
+              '65':
+                  BankDirectoryV.Type := BankDirectoryV.Type::"SB Branch";
+              '71':
+                  BankDirectoryV.Type := BankDirectoryV.Type::"Shar.Comm.Bank Filial";
+              '75':
+                  BankDirectoryV.Type := BankDirectoryV.Type::"Private Bank Filial";
+              '78':
+                  BankDirectoryV.Type := BankDirectoryV.Type::"Cooper.Bank Filial";
+              '90':
+                  BankDirectoryV.Type := BankDirectoryV.Type::"AgroPromBank Filial";
+              '99':
+                  BankDirectoryV.Type := BankDirectoryV.Type::"Field CB Branch";
+              ELSE
+                  BankDirectoryV.Type := 0; // unknown
+            END;
+          'ParticipantStatus':
+            CASE Attribute.Value OF
+              'PSAC':
+                  BEGIN
+                      IF NOT BankDirectoryV.PSAC THEN BEGIN
+                          BankDirectoryV.PSAC := TRUE;
+                          BankDirectoryV."PSAC Date" := TODAY();
+                      END;
+                      IF BankDirectoryV.PSDL THEN BEGIN
+                          BankDirectoryV.PSDL := FALSE;
+                          BankDirectoryV."PSDL Date" := 0D;
+                      END;
+                  END;
+
+                'PSDL':
+                    BEGIN
+                        IF NOT BankDirectoryV.PSDL THEN BEGIN
+                            BankDirectoryV.PSDL := TRUE;
+                            BankDirectoryV."PSDL Date" := TODAY();
+                        END;
+                        IF BankDirectoryV.PSAC THEN BEGIN
+                            BankDirectoryV.PSAC := FALSE;
+                            BankDirectoryV."PSAC Date" := 0D;
+                        END;
+                    END;
+                'UID':
+                    BankDirectoryV.UID := Attribute.Value;
+            END;
+        END; // case Attribute.Name
+      END;
+    END;
+
+    LOCAL PROCEDURE ParseAccounts@1101495007(VAR NodeV@1101495001 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlNode";VAR BankDirectoryV@1101495000 : Record 12409);
+    BEGIN
+    END;
+
+    LOCAL PROCEDURE ConvertDate@1101495008(TextDateP@1101495000 : Text) NewDateR : Date;
+    VAR
+      NewDateText@1101495001 : Text;
+    BEGIN
+      NewDateR := 0D;
+      NewDateText := '';
+      IF STRLEN(TextDateP) = 10 THEN
+          NewDateText := STRSUBSTNO('%1.%2.%3', COPYSTR(TextDateP, 9, 2), COPYSTR(TextDateP, 6, 2), COPYSTR(TextDateP, 1, 4));
+      IF EVALUATE(NewDateR, NewDateText) THEN;
+      EXIT(NewDateR);
+    END;
+
+    BEGIN
+    END.
+  }
+}
+
