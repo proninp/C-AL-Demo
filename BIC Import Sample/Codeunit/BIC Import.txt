@@ -2,15 +2,15 @@ OBJECT Codeunit 50000 BIC Import
 {
   OBJECT-PROPERTIES
   {
-    Date=10.04.21;
-    Time=16:22:52;
+    Date=11.04.21;
+    Time=10:02:27;
     Modified=Yes;
     Version List=PPS 2021.04.10;
   }
   PROPERTIES
   {
     OnRun=BEGIN
-            ReadZip('http://www.cbr.ru/s/newbik');
+            ReadZip(WebLinkCbr);
           END;
 
   }
@@ -28,6 +28,8 @@ OBJECT Codeunit 50000 BIC Import
       ParticipantInfoLabel@1101495008 : TextConst 'ENU=ParticipantInfo';
       AccountsLabel@1101495009 : TextConst 'ENU=Accounts';
       BankDirectory@1101495010 : Record 12409;
+      RstrListLabel@1101495011 : TextConst 'RUS=RstrList';
+      AccRstrListLabel@1101495012 : TextConst 'RUS=AccRstrList';
 
     LOCAL PROCEDURE ReadZip@1101495000(UrlLinkP@1101495004 : Text);
     VAR
@@ -116,9 +118,10 @@ OBJECT Codeunit 50000 BIC Import
           ParticipantInfoLabel:
             ParseParticipantInfo(Node, BankDirectory);
           AccountsLabel:
-            ParseAccounts(Node, BankDirectory);
+            ParseAccounts(Node);
         END;
       END;
+      UpdateBankAccountByBankDir();
     END;
 
     LOCAL PROCEDURE CreateBankDirectory@1101495004(VAR BankDirectoryV@1101495000 : Record 12409;BICValue@1101495001 : Text);
@@ -132,6 +135,7 @@ OBJECT Codeunit 50000 BIC Import
 
     LOCAL PROCEDURE ParseParticipantInfo@1101495006(VAR NodeV@1101495000 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlNode";VAR BankDirectoryV@1101495001 : Record 12409);
     VAR
+      Node@1101495003 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlNode";
       Attribute@1101495002 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlAttribute";
     BEGIN
       FOREACH Attribute IN NodeV.Attributes DO BEGIN
@@ -146,105 +150,275 @@ OBJECT Codeunit 50000 BIC Import
           'Ind':
               BankDirectoryV."Post Code" := Attribute.Value;
           'Tnp':
-              CASE TRUE OF
-                  LOWERCASE(Attribute.Value) IN ['£.', '£']:
-                      BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Gorod;
-                  LOWERCASE(Attribute.Value) IN ['¯.', '¯']:
-                      BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Poselok;
-                  LOWERCASE(Attribute.Value) IN ['á.', 'á']:
-                      BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Selo;
-                  LOWERCASE(Attribute.Value) IN ['¯£â.', '¯£â']:
-                      BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::"Poselok gorodskogo tipa";
-                  LOWERCASE(Attribute.Value) IN ['áâ-æ ']:
-                      BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Stanica;
-                  LOWERCASE(Attribute.Value) IN [' ã«']:
-                      BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Aul;
-                  LOWERCASE(Attribute.Value) IN ['à¯.', 'à¯']:
-                      BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::"Rabochiy poselok";
-                  ELSE
-                      BankDirectoryV."Area Type" := 0; // unknown
+            CASE TRUE OF
+              LOWERCASE(Attribute.Value) IN ['ã.', 'ã']:
+                BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Gorod;
+              LOWERCASE(Attribute.Value) IN ['ï.', 'ï']:
+                BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Poselok;
+              LOWERCASE(Attribute.Value) IN ['ñ.', 'ñ']:
+                BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Selo;
+              LOWERCASE(Attribute.Value) IN ['ïãò.', 'ïãò']:
+                BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::"Poselok gorodskogo tipa";
+              LOWERCASE(Attribute.Value) IN ['ñò-öà ']:
+                BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Stanica;
+              LOWERCASE(Attribute.Value) IN ['àóë']:
+                BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Aul;
+              LOWERCASE(Attribute.Value) IN ['ðï.', 'ðï']:
+                BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::"Rabochiy poselok";
+              ELSE
+                BankDirectoryV."Area Type" := 0; // unknown
               END;
           'Nnp':
-              BankDirectoryV."Area Name" := Attribute.Value;
+            BankDirectoryV."Area Name" := Attribute.Value;
           'Adr':
-              BankDirectoryV.Address := COPYSTR(Attribute.Value, 1, MAXSTRLEN(BankDirectoryV.Address));
+            BankDirectoryV.Address := COPYSTR(Attribute.Value, 1, MAXSTRLEN(BankDirectoryV.Address));
           'DateIn':
-              BankDirectoryV."Date In" := ConvertDate(Attribute.Value);
+            BankDirectoryV."Date In" := ConvertDate(Attribute.Value);
           'DateOut':
-              BankDirectoryV."Date Out" := ConvertDate(Attribute.Value);
+            BankDirectoryV."Date Out" := ConvertDate(Attribute.Value);
           'PtType':
             CASE Attribute.Value OF
               '00':
-                  BankDirectoryV.Type := BankDirectoryV.Type::GRKC;
+                BankDirectoryV.Type := BankDirectoryV.Type::GRKC;
               '10':
-                  BankDirectoryV.Type := BankDirectoryV.Type::RKC;
+                BankDirectoryV.Type := BankDirectoryV.Type::RKC;
               '12':
-                  BankDirectoryV.Type := BankDirectoryV.Type::Bank;
+                BankDirectoryV.Type := BankDirectoryV.Type::Bank;
               '15':
-                  BankDirectoryV.Type := BankDirectoryV.Type::"Comm.Bank";
+                BankDirectoryV.Type := BankDirectoryV.Type::"Comm.Bank";
               '16':
-                  BankDirectoryV.Type := BankDirectoryV.Type::"Sber.Bank";
+                BankDirectoryV.Type := BankDirectoryV.Type::"Sber.Bank";
               '20':
-                  BankDirectoryV.Type := BankDirectoryV.Type::"Shar.Comm.Bank";
+                BankDirectoryV.Type := BankDirectoryV.Type::"Shar.Comm.Bank";
               '30':
-                  BankDirectoryV.Type := BankDirectoryV.Type::"Private Comm.Bank";
+                BankDirectoryV.Type := BankDirectoryV.Type::"Private Comm.Bank";
               '40':
-                  BankDirectoryV.Type := BankDirectoryV.Type::"Cooper.Bank";
+                BankDirectoryV.Type := BankDirectoryV.Type::"Cooper.Bank";
               '51':
-                  BankDirectoryV.Type := BankDirectoryV.Type::AgroPromBank;
+                BankDirectoryV.Type := BankDirectoryV.Type::AgroPromBank;
               '52':
-                  BankDirectoryV.Type := BankDirectoryV.Type::"Bank Filial";
+                BankDirectoryV.Type := BankDirectoryV.Type::"Bank Filial";
               '60':
-                  BankDirectoryV.Type := BankDirectoryV.Type::"Comm.Bamk Filial";
+                BankDirectoryV.Type := BankDirectoryV.Type::"Comm.Bamk Filial";
               '65':
-                  BankDirectoryV.Type := BankDirectoryV.Type::"SB Branch";
+                BankDirectoryV.Type := BankDirectoryV.Type::"SB Branch";
               '71':
-                  BankDirectoryV.Type := BankDirectoryV.Type::"Shar.Comm.Bank Filial";
+                BankDirectoryV.Type := BankDirectoryV.Type::"Shar.Comm.Bank Filial";
               '75':
-                  BankDirectoryV.Type := BankDirectoryV.Type::"Private Bank Filial";
+                BankDirectoryV.Type := BankDirectoryV.Type::"Private Bank Filial";
               '78':
-                  BankDirectoryV.Type := BankDirectoryV.Type::"Cooper.Bank Filial";
+                BankDirectoryV.Type := BankDirectoryV.Type::"Cooper.Bank Filial";
               '90':
-                  BankDirectoryV.Type := BankDirectoryV.Type::"AgroPromBank Filial";
+                BankDirectoryV.Type := BankDirectoryV.Type::"AgroPromBank Filial";
               '99':
-                  BankDirectoryV.Type := BankDirectoryV.Type::"Field CB Branch";
+                BankDirectoryV.Type := BankDirectoryV.Type::"Field CB Branch";
               ELSE
-                  BankDirectoryV.Type := 0; // unknown
+                BankDirectoryV.Type := 0; // unknown
             END;
           'ParticipantStatus':
             CASE Attribute.Value OF
               'PSAC':
                   BEGIN
                       IF NOT BankDirectoryV.PSAC THEN BEGIN
-                          BankDirectoryV.PSAC := TRUE;
-                          BankDirectoryV."PSAC Date" := TODAY();
+                        BankDirectoryV.PSAC := TRUE;
+                        BankDirectoryV."PSAC Date" := TODAY();
                       END;
                       IF BankDirectoryV.PSDL THEN BEGIN
-                          BankDirectoryV.PSDL := FALSE;
-                          BankDirectoryV."PSDL Date" := 0D;
+                        BankDirectoryV.PSDL := FALSE;
+                        BankDirectoryV."PSDL Date" := 0D;
                       END;
                   END;
 
                 'PSDL':
                     BEGIN
-                        IF NOT BankDirectoryV.PSDL THEN BEGIN
-                            BankDirectoryV.PSDL := TRUE;
-                            BankDirectoryV."PSDL Date" := TODAY();
-                        END;
-                        IF BankDirectoryV.PSAC THEN BEGIN
-                            BankDirectoryV.PSAC := FALSE;
-                            BankDirectoryV."PSAC Date" := 0D;
-                        END;
+                      IF NOT BankDirectoryV.PSDL THEN BEGIN
+                        BankDirectoryV.PSDL := TRUE;
+                        BankDirectoryV."PSDL Date" := TODAY();
+                      END;
+                      IF BankDirectoryV.PSAC THEN BEGIN
+                        BankDirectoryV.PSAC := FALSE;
+                        BankDirectoryV."PSAC Date" := 0D;
+                      END;
                     END;
                 'UID':
                     BankDirectoryV.UID := Attribute.Value;
             END;
         END; // case Attribute.Name
       END;
+      FOREACH Node IN NodeV.ChildNodes DO
+        ParseRstrList(Node, BankDirectoryV);
+      BankDirectoryV.MODIFY();
     END;
 
-    LOCAL PROCEDURE ParseAccounts@1101495007(VAR NodeV@1101495001 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlNode";VAR BankDirectoryV@1101495000 : Record 12409);
+    LOCAL PROCEDURE ParseAccounts@1101495007(VAR NodeV@1101495001 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlNode");
+    VAR
+      BankAcc@1101495002 : Record 270;
+      Node@1101495000 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlNode";
+      Attribute@1101495004 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlAttribute";
+      IsBankAccFound@1101495003 : Boolean;
     BEGIN
+      IsBankAccFound := FALSE;
+      IF BankAcc.RECORDLEVELLOCKING THEN
+        BankAcc.LOCKTABLE;
+      FOREACH Attribute IN NodeV.Attributes DO BEGIN
+        CASE Attribute.Name OF
+          'Account':
+            BEGIN
+              BankAcc.SETRANGE("Bank Account No.", Attribute.Value);
+                IF NOT BankAcc.FINDFIRST() THEN BEGIN
+                  BankAcc.INIT();
+                  BankAcc."No." := Attribute.Value;
+                  BankAcc."Bank Account No." := Attribute.Value;
+                  BankAcc.INSERT();
+                END;
+                IsBankAccFound := TRUE;
+              END;
+          'AccountCBRBIC':
+            BankAcc."Bank BIC" := Attribute.Value;
+          'DateIn':
+            BankAcc."Date In" := ConvertDate(Attribute.Value);
+          'DateOut':
+            BEGIN
+              BankAcc."Date Out" := ConvertDate(Attribute.Value);
+              BankAcc.Blocked := (BankAcc."Date Out" <= TODAY()) AND (NOT BankAcc.Blocked);
+            END;
+          'AccountStatus':
+            CASE Attribute.Value OF
+              'ACAC':
+                BankAcc.ACAC := TRUE;
+              'ACDL':
+                BankAcc.ACDL := TRUE;
+            END;
+        END;
+      END;
+
+      FOREACH Node IN NodeV.ChildNodes DO
+        ParseAccRstr(BankAcc, Node);
+
+      IF IsBankAccFound THEN
+        BankAcc.MODIFY;
+    END;
+
+    LOCAL PROCEDURE ParseRstrList@1101495010(VAR NodeV@1101495001 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlNode";VAR BankDirectoryV@1101495000 : Record 12409);
+    VAR
+      Attribute@1101495002 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlAttribute";
+    BEGIN
+      IF NodeV.Name <> RstrListLabel THEN
+        EXIT;
+      FOREACH Attribute IN NodeV.Attributes DO BEGIN
+        CASE Attribute.Name OF
+          'Rstr':
+            CASE Attribute.Value OF
+              'LWRS':
+                BankDirectoryV.LWRS := TRUE;
+              'URRS':
+                BankDirectoryV.URRS := TRUE;
+              'MRTR':
+                BankDirectoryV.MRTR := TRUE;
+            END;
+          'RstrDate':
+            CASE TRUE OF
+              BankDirectoryV.LWRS:
+                BankDirectoryV."LWRS Date" := ConvertDate(Attribute.Value);
+              BankDirectoryV.URRS:
+                BankDirectoryV."URRS Date" := ConvertDate(Attribute.Value);
+              BankDirectoryV.MRTR:
+                BankDirectoryV."MRTR Date" := ConvertDate(Attribute.Value);
+            END;
+        END;
+      END;
+    END;
+
+    LOCAL PROCEDURE ParseAccRstr@1101495017(VAR BankAccV@1101495000 : Record 270;VAR NodeV@1101495001 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlNode");
+    VAR
+      Attribute@1101495002 : DotNet "'System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'.System.Xml.XmlAttribute";
+    BEGIN
+      IF NodeV.Name <> AccRstrListLabel THEN
+        EXIT;
+
+      FOREACH Attribute IN NodeV.Attributes DO BEGIN
+        CASE Attribute.Name OF
+          'AccRstr':
+            CASE Attribute.Value OF
+              'LMRS':
+                  BankAccV.LMRS := TRUE;
+              'URRS':
+                  BankAccV.URRS := TRUE;
+              'CLRS':
+                  BankAccV.CLRS := TRUE;
+              'FPRS':
+                  BankAccV.FPRS := TRUE;
+            END;
+          'AccRstrDate':
+            CASE TRUE OF
+              BankAccV.LMRS:
+                BankAccV."LMRS Date" := ConvertDate(Attribute.Value);
+              BankAccV.URRS:
+                BankAccV."URRS Date" := ConvertDate(Attribute.Value);
+              BankAccV.CLRS:
+                BEGIN
+                  BankAccV."CLRS Date" := ConvertDate(Attribute.Value);
+                  BankAccV.Blocked := (BankAccV."CLRS Date" <= TODAY()) AND (NOT BankAccV.Blocked);
+                END;
+              BankAccV.FPRS:
+              BankAccV."FPRS Date" := ConvertDate(Attribute.Value);
+            END;
+        END; // case Attribute.Name
+      END;
+    END;
+
+    LOCAL PROCEDURE UpdateBankAccountByBankDir@1101495011();
+    VAR
+      BankDirectory@1101495000 : Record 12409;
+      BankAcc@1101495001 : Record 270;
+      Name@1101495002 : Text;
+      Name2@1101495003 : Text;
+      Address@1101495004 : Text;
+      Address2@1101495005 : Text;
+    BEGIN
+      BankAcc.RESET();
+      BankDirectory.RESET();
+      IF BankDirectory.FINDSET() THEN
+        REPEAT
+          BankAcc.SETRANGE("Bank BIC", BankDirectory.BIC);
+          IF BankAcc.FINDFIRST() THEN BEGIN
+            Name := '';
+            Name2 := '';
+            Address := '';
+            Address2 := '';
+            // Update Name
+            Name := COPYSTR(BankDirectory."Full Name", 1, MAXSTRLEN(BankAcc.Name));
+            IF STRLEN(BankDirectory."Full Name") > MAXSTRLEN(BankAcc.Name) THEN
+              Name2 := COPYSTR(BankDirectory."Full Name", MAXSTRLEN(BankAcc.Name), MAXSTRLEN(BankAcc."Name 2"));
+            IF (Name + Name2) <> (BankAcc.Name + BankAcc."Name 2") THEN BEGIN
+              BankAcc.MODIFYALL(Name, Name, FALSE);
+              BankAcc.MODIFYALL("Name 2", Name2, FALSE);
+            END;
+            // Update Address
+            Address := COPYSTR(BankDirectory.Address, 1, MAXSTRLEN(BankAcc.Address));
+            IF STRLEN(BankDirectory.Address) > MAXSTRLEN(BankAcc.Address) THEN
+              Address2 := COPYSTR(BankDirectory.Address, MAXSTRLEN(BankAcc.Address), MAXSTRLEN(BankAcc."Address 2"));
+            IF (Address + Address2) <> (BankAcc.Address + BankAcc."Address 2") THEN BEGIN
+              BankAcc.MODIFYALL(Address, Address, FALSE);
+              BankAcc.MODIFYALL("Address 2", Address2, FALSE);
+            END;
+            // Update other information
+            IF BankAcc."Post Code" <> BankDirectory."Post Code" THEN
+              BankAcc.MODIFYALL("Post Code", COPYSTR(BankDirectory."Post Code", 1, MAXSTRLEN(BankAcc."Post Code")));
+            IF BankAcc."Country/Region Code" <> BankDirectory."Region Code" THEN
+              BankAcc.MODIFYALL("Country/Region Code", COPYSTR(BankDirectory."Region Code", 1, MAXSTRLEN(BankAcc."Country/Region Code")));
+            IF BankDirectory."Area Type" = BankDirectory."Area Type"::Gorod THEN
+              IF BankAcc.City <> BankDirectory."Area Name" THEN
+                BankAcc.MODIFYALL(City, COPYSTR(BankDirectory."Area Name", 1, MAXSTRLEN(BankAcc.City)));
+            // Check if Blocked
+            IF BankDirectory.LWRS AND (BankDirectory."LWRS Date" <= TODAY()) THEN
+              BankAcc.MODIFYALL(Blocked, TRUE);
+            IF BankDirectory.PSDL THEN BEGIN
+              BankAcc.MODIFYALL(Blocked, TRUE);
+              BankAcc.MODIFYALL(ACDL, TRUE);
+            END;
+          END;
+        UNTIL BankDirectory.NEXT() = 0;
     END;
 
     LOCAL PROCEDURE ConvertDate@1101495008(TextDateP@1101495000 : Text) NewDateR : Date;
