@@ -151,19 +151,19 @@ OBJECT Codeunit 50000 BIC Import
               BankDirectoryV."Post Code" := Attribute.Value;
           'Tnp':
             CASE TRUE OF
-              LOWERCASE(Attribute.Value) IN ['ã.', 'ã']:
+              LOWERCASE(Attribute.Value) IN ['?.', '?']:
                 BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Gorod;
-              LOWERCASE(Attribute.Value) IN ['ï.', 'ï']:
+              LOWERCASE(Attribute.Value) IN ['?.', '?']:
                 BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Poselok;
-              LOWERCASE(Attribute.Value) IN ['ñ.', 'ñ']:
+              LOWERCASE(Attribute.Value) IN ['?.', '?']:
                 BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Selo;
-              LOWERCASE(Attribute.Value) IN ['ïãò.', 'ïãò']:
+              LOWERCASE(Attribute.Value) IN ['???.', '???']:
                 BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::"Poselok gorodskogo tipa";
-              LOWERCASE(Attribute.Value) IN ['ñò-öà ']:
+              LOWERCASE(Attribute.Value) IN ['??-??']:
                 BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Stanica;
-              LOWERCASE(Attribute.Value) IN ['àóë']:
+              LOWERCASE(Attribute.Value) IN ['???']:
                 BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::Aul;
-              LOWERCASE(Attribute.Value) IN ['ðï.', 'ðï']:
+              LOWERCASE(Attribute.Value) IN ['??.', '??']:
                 BankDirectoryV."Area Type" := BankDirectoryV."Area Type"::"Rabochiy poselok";
               ELSE
                 BankDirectoryV."Area Type" := 0; // unknown
