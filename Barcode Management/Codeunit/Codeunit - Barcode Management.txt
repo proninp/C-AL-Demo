@@ -1,0 +1,1889 @@
+OBJECT Codeunit 54006 Barcode Management
+{
+  OBJECT-PROPERTIES
+  {
+    Date=12.04.22;
+    Time=17:46:52;
+    Modified=Yes;
+    Version List=Z289-11;
+  }
+  PROPERTIES
+  {
+    OnRun=BEGIN
+          END;
+
+  }
+  CODE
+  {
+    VAR
+      BarcodeTxt@1000000001 : Text;
+      BarcodeBinaryBigText@1000000000 : BigText;
+
+    PROCEDURE EncodeCode128@1000000009(BarcodeP@1000000001 : Code[1000];SizeP@1000000017 : Integer;IsVerticalP@1000000018 : Boolean;VAR TempBlobV@1000000000 : TEMPORARY Record 99008535);
+    VAR
+      TmpCode128L@1000000002 : TEMPORARY Record 99016;
+      BmpHeaderOutStreamL@1000000016 : OutStream;
+      TextArrayL@1000000004 : ARRAY [2,200] OF Text[30];
+      TerminationBarL@1000000010 : Text[2];
+      CurrentCharSetL@1000000005 : Char;
+      CharL@1101502000 : Char;
+      WeightSumL@1000000006 : Integer;
+      ConvIntL@1000000008 : Integer;
+      CheckDigitL@1000000011 : Integer;
+      ConvIntL1@1000000009 : Integer;
+      ConvIntL2@1000000012 : Integer;
+      IsNumberL@1000000013 : Boolean;
+      LinesL@1000000015 : Integer;
+      BarsL@1000000014 : Integer;
+      i@1000000003 : Integer;
+      j@1000000007 : Integer;
+      SizeErrL@1000000019 : TextConst 'ENU=Valid values for the barcode size are 1, 2, 3, 4 & 5;
+    BEGIN
+      CLEAR(BarcodeBinaryBigText);
+      CLEAR(TempBlobV);
+      TempBlobV.DELETEALL;
+      CLEAR(TmpCode128L);
+      TmpCode128L.DELETEALL;
+      CLEAR(CurrentCharSetL);
+      TerminationBarL := '11';
+      BarcodeTxt := '';
+
+      IF NOT (SizeP IN [1, 2, 3, 4, 5]) THEN
+        ERROR(SizeErrL);
+
+      InitCode128(TmpCode128L);
+
+      FOR i := 1 TO STRLEN(BarcodeP) DO BEGIN
+        j += 1;
+        IsNumberL := FALSE;
+        TmpCode128L.RESET;
+
+        IF EVALUATE(ConvIntL1,FORMAT(BarcodeP[i])) THEN
+          IsNumberL := EVALUATE(ConvIntL2, FORMAT(BarcodeP[i + 1]));
+
+        // A '.' is evaluated as a 0, extra check needed
+        IF FORMAT(BarcodeP[i]) = '.' THEN
+          IsNumberL := FALSE;
+
+        IF FORMAT(BarcodeP[i + 1]) = '.' THEN
+          IsNumberL := FALSE;
+
+        IF IsNumberL AND (ConvIntL1 IN [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]) AND (ConvIntL2 IN [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]) THEN BEGIN
+          IF (CurrentCharSetL <> 'C') THEN BEGIN
+            IF (i = 1) THEN BEGIN
+              TmpCode128L.GET('STARTC');
+              EVALUATE(ConvIntL, TmpCode128L."Code 03");
+              WeightSumL := ConvIntL;
+            END ELSE BEGIN
+              TmpCode128L.GET('CODEC');
+              EVALUATE(ConvIntL, TmpCode128L."Code 03");
+              WeightSumL += ConvIntL * j;
+              j += 1;
+            END;
+
+            BarcodeBinaryBigText.ADDTEXT(FORMAT(TmpCode128L."Code 04"));
+            CharL := TmpCode128L."Int 01";
+            BarcodeTxt += FORMAT(CharL);
+            CurrentCharSetL := 'C';
+          END;
+        END ELSE BEGIN
+          IF CurrentCharSetL <> 'A' THEN BEGIN
+            IF (i = 1) THEN BEGIN
+              TmpCode128L.GET('STARTA');
+              EVALUATE(ConvIntL, TmpCode128L."Code 03");
+              WeightSumL := ConvIntL;
+            END ELSE BEGIN
+              // CODEA
+              TmpCode128L.GET('FNC4');
+              EVALUATE(ConvIntL, TmpCode128L."Code 03");
+              WeightSumL += ConvIntL * j;
+              j += 1;
+            END;
+
+            BarcodeBinaryBigText.ADDTEXT(FORMAT(TmpCode128L."Code 04"));
+            CharL := TmpCode128L."Int 01";
+            BarcodeTxt += FORMAT(CharL);
+            CurrentCharSetL := 'A';
+          END;
+        END;
+
+        CASE CurrentCharSetL OF
+          'A':
+            BEGIN
+              TmpCode128L.GET(FORMAT(BarcodeP[i]));
+
+              EVALUATE(ConvIntL,TmpCode128L."Code 03");
+
+              WeightSumL += ConvIntL * j;
+              BarcodeBinaryBigText.ADDTEXT(FORMAT(TmpCode128L."Code 04"));
+              CharL := TmpCode128L."Int 01";
+              BarcodeTxt += FORMAT(CharL);
+            END;
+          'C':
+            BEGIN
+              TmpCode128L.RESET;
+              TmpCode128L.SETCURRENTKEY("Code 03");
+              TmpCode128L.SETRANGE("Code 03", (FORMAT(BarcodeP[i]) + FORMAT(BarcodeP[i + 1])));
+              TmpCode128L.FINDFIRST;
+
+              EVALUATE(ConvIntL, TmpCode128L."Code 03");
+              WeightSumL += ConvIntL * j;
+
+              BarcodeBinaryBigText.ADDTEXT(FORMAT(TmpCode128L."Code 04"));
+              CharL := TmpCode128L."Int 01";
+              BarcodeTxt += FORMAT(CharL);
+              i += 1;
+            END;
+        END;
+      END;
+
+      CheckDigitL := WeightSumL MOD 103;
+
+      TmpCode128L.RESET; // Add check digit
+
+      IF CheckDigitL <= 9 THEN
+        TmpCode128L.SETRANGE("Code 03", '0' + FORMAT(CheckDigitL))
+      ELSE
+        TmpCode128L.SETRANGE("Code 03", FORMAT(CheckDigitL));
+
+      TmpCode128L.FINDFIRST;
+      BarcodeBinaryBigText.ADDTEXT(FORMAT(TmpCode128L."Code 04"));
+      CharL := TmpCode128L."Int 01";
+      BarcodeTxt += FORMAT(CharL);
+
+      // Add stop character
+      TmpCode128L.GET('STOP');
+      BarcodeBinaryBigText.ADDTEXT(FORMAT(TmpCode128L."Code 04"));
+      CharL := TmpCode128L."Int 01";
+      BarcodeTxt += FORMAT(CharL);
+
+      BarcodeBinaryBigText.ADDTEXT(TerminationBarL); // Add termination bar
+
+      BarsL  := BarcodeBinaryBigText.LENGTH;
+      LinesL := ROUND(BarsL * 0.25, 1, '>');
+
+      TempBlobV.Blob.CREATEOUTSTREAM(BmpHeaderOutStreamL);
+      CreateBMPHeader(BmpHeaderOutStreamL, BarsL, LinesL, SizeP, IsVerticalP); // Writing header
+      CreateBarcodeDetail(LinesL,BarsL,SizeP,IsVerticalP,BmpHeaderOutStreamL); // Write barcode detail
+      TempBlobV.INSERT;
+    END;
+
+    PROCEDURE EncodeEAN13@1000000010(BarcodeP@1000000000 : Code[250];SizeP@1000000016 : Integer;IsVerticalP@1000000017 : Boolean;VAR TempBlobV@1000000015 : TEMPORARY Record 99008535);
+    VAR
+      BmpHeaderOutStreamL@1000000014 : OutStream;
+      BarInclCheckdL@1000000002 : Code[13];
+      WeightL@1000000003 : Text[12];
+      SentinelL@1000000004 : Text[3];
+      CenterGuardL@1000000005 : Text[6];
+      BarcodeL@1000000011 : Text[30];
+      ParEncArrayL@1000000006 : ARRAY [10] OF Text[6];
+      SetEncArrayL@1000000007 : ARRAY [10,10] OF Text[7];
+      CheckDigitL@1000000001 : Integer;
+      CodingL@1000000009 : Integer;
+      NumberL@1000000010 : Integer;
+      LinesL@1000000012 : Integer;
+      BarsL@1000000013 : Integer;
+      i@1000000008 : Integer;
+      SizeErrL@1000000018 : TextConst 'ENU=Valid values for the barcode size are 1, 2, 3, 4 & 5;
+      LengthErrL@1000000020 : TextConst 'ENU=Value to encode should be %1 digits.;
+      NumberErrL@1000000019 : TextConst 'ENU=Only numbers allowed.;
+    BEGIN
+      CLEAR(BarcodeBinaryBigText);
+      CLEAR(TempBlobV);
+      TempBlobV.DELETEALL;
+
+      SentinelL := '101';
+      CenterGuardL := '01010';
+      WeightL   := '131313131313';
+
+      IF STRLEN(BarcodeP) <> 12 THEN
+        ERROR(LengthErrL, 12);
+
+      IF NOT (SizeP IN [1, 2, 3, 4, 5]) THEN
+        ERROR(SizeErrL);
+
+      FOR i := 1 TO STRLEN(BarcodeP) DO BEGIN
+        IF NOT (BarcodeP[i] IN ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']) THEN
+          ERROR(NumberErrL);
+      END;
+
+      InitEAN813(ParEncArrayL, SetEncArrayL);
+
+      CheckDigitL := STRCHECKSUM(BarcodeP, WeightL, 10); // Calculate checkdigit
+      BarInclCheckdL := COPYSTR(BarcodeP, 2, STRLEN(BarcodeP)) + FORMAT(CheckDigitL); // Payload to encode
+
+      // Ean parity encodeing table
+      EVALUATE(CodingL, FORMAT(BarcodeP[1]));
+      CodingL += 1;
+
+      BarcodeBinaryBigText.ADDTEXT(SentinelL); // Add start sentinel
+
+      FOR i := 1 TO STRLEN(BarInclCheckdL) DO BEGIN
+
+        // Add centerguard
+        IF i = 7 THEN
+          BarcodeBinaryBigText.ADDTEXT(CenterGuardL);
+
+        EVALUATE(NumberL, FORMAT(BarInclCheckdL[i]));
+
+        IF i <= 6 THEN BEGIN
+          BarcodeL := ParEncArrayL[CodingL];
+          CASE BarcodeL[i] OF
+           'O':
+             BarcodeBinaryBigText.ADDTEXT(SetEncArrayL[NumberL + 1][1]);
+           'E':
+             BarcodeBinaryBigText.ADDTEXT(SetEncArrayL[NumberL + 1][2]);
+          END;
+        END ELSE
+          BarcodeBinaryBigText.ADDTEXT(SetEncArrayL[NumberL + 1][3]);
+      END;
+
+      BarcodeBinaryBigText.ADDTEXT(SentinelL); // Add stop sentinel
+
+      BarsL  := BarcodeBinaryBigText.LENGTH;
+      LinesL := ROUND(BarsL * 0.25, 1, '>');
+
+      TempBlobV.Blob.CREATEOUTSTREAM(BmpHeaderOutStreamL);
+
+      CreateBMPHeader(BmpHeaderOutStreamL, BarsL, LinesL, SizeP, IsVerticalP); // Writing header
+      CreateBarcodeDetail(LinesL, BarsL, SizeP, IsVerticalP, BmpHeaderOutStreamL); // Write barcode detail
+      TempBlobV.INSERT;
+    END;
+
+    PROCEDURE EncodeCode39@1000000005(BarcodeP@1000000001 : Code[1000];SizeP@1000000011 : Integer;IsCheckDigitP@1000000004 : Boolean;IsVerticalP@1000000012 : Boolean;VAR TempBlobV@1000000000 : TEMPORARY Record 99008535);
+    VAR
+      TmpCode39L@1000000003 : TEMPORARY Record 99016;
+      BmpHeaderOutStreamL@1000000010 : OutStream;
+      SumL@1000000006 : Integer;
+      ConvIntL@1000000007 : Integer;
+      CheckDigitL@1000000008 : Integer;
+      LinesL@1000000009 : Integer;
+      BarsL@1000000002 : Integer;
+      i@1000000005 : Integer;
+      SizeErrL@1000000013 : TextConst 'ENU=Valid values for the barcode size are 1, 2, 3, 4 & 5;
+    BEGIN
+      CLEAR(BarcodeBinaryBigText);
+      CLEAR(TempBlobV);
+      TempBlobV.DELETEALL;
+      CLEAR(TmpCode39L);
+      TmpCode39L.DELETEALL;
+      SumL := 0;
+
+      IF NOT (SizeP IN [1, 2, 3, 4, 5]) THEN
+        ERROR(SizeErrL);
+
+      InitCode39(TmpCode39L);
+
+      // Calculate check digit
+      IF IsCheckDigitP THEN BEGIN
+        FOR i := 1 TO STRLEN(BarcodeP) DO BEGIN
+          TmpCode39L.GET(FORMAT(BarcodeP[i]));
+          EVALUATE(ConvIntL, TmpCode39L."Code 03");
+          SumL += ConvIntL;
+        END;
+        CheckDigitL := SumL MOD 43;
+        BarcodeP := BarcodeP + FORMAT(CheckDigitL);
+      END;
+
+      // Add start character
+      TmpCode39L.GET('*');
+      BarcodeBinaryBigText.ADDTEXT(FORMAT(TmpCode39L."Code 04"));
+
+      BarcodeBinaryBigText.ADDTEXT('0'); // Add separator
+
+      FOR i := 1 TO STRLEN(BarcodeP) DO BEGIN
+        BarcodeBinaryBigText.ADDTEXT('0'); // Add separator
+
+        TmpCode39L.GET(FORMAT(BarcodeP[i]));
+        BarcodeBinaryBigText.ADDTEXT(FORMAT(TmpCode39L."Code 04"));
+      END;
+
+      BarcodeBinaryBigText.ADDTEXT('0'); // Add separator
+
+      // Add stop character
+      TmpCode39L.GET('*');
+      BarcodeBinaryBigText.ADDTEXT(FORMAT(TmpCode39L."Code 04"));
+
+      BarsL  := BarcodeBinaryBigText.LENGTH;
+      LinesL := ROUND(BarsL * 0.25, 1, '>');
+
+      TempBlobV.Blob.CREATEOUTSTREAM(BmpHeaderOutStreamL);
+      CreateBMPHeader(BmpHeaderOutStreamL, BarsL, LinesL, SizeP, IsVerticalP); // Writing header
+      CreateBarcodeDetail(LinesL, BarsL, SizeP, IsVerticalP, BmpHeaderOutStreamL); // Write barcode detail
+      TempBlobV.INSERT;
+    END;
+
+    PROCEDURE EncodeEAN8@1000000007(BarcodeP@1000000001 : Code[250];SizeP@1000000008 : Integer;IsVerticalP@1000000011 : Boolean;VAR TempBlobV@1000000000 : TEMPORARY Record 99008535);
+    VAR
+      BmpHeaderOutStreamL@1000000014 : OutStream;
+      BarInclCheckdL@1000000015 : Code[8];
+      ParEncArrayL@1000000003 : ARRAY [10] OF Text[6];
+      SetEncArrayL@1000000002 : ARRAY [10,10] OF Text[7];
+      WeightL@1000000006 : Text[12];
+      SentinelL@1000000005 : Text[3];
+      CenterGuardL@1000000004 : Text[6];
+      CheckDigitL@1000000007 : Integer;
+      NumberL@1000000010 : Integer;
+      BarsL@1000000012 : Integer;
+      LinesL@1000000013 : Integer;
+      i@1000000009 : Integer;
+      SizeErrL@1000000018 : TextConst 'ENU=Valid values for the barcode size are 1, 2, 3, 4 & 5;
+      LengthErrL@1000000017 : TextConst 'ENU=Value to encode should be %1 digits.;
+      NumberErrL@1000000016 : TextConst 'ENU=Only numbers allowed.;
+    BEGIN
+      CLEAR(BarcodeBinaryBigText);
+      CLEAR(TempBlobV);
+      SentinelL    := '101';
+      CenterGuardL := '01010';
+      WeightL      := '3131313';
+
+      IF STRLEN(BarcodeP) <> 7 THEN
+        ERROR(LengthErrL,7);
+
+      IF NOT (SizeP IN [1, 2, 3, 4, 5]) THEN
+        ERROR(SizeErrL);
+
+      FOR i := 1 TO STRLEN(BarcodeP) DO BEGIN
+        IF NOT (BarcodeP[i] IN ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']) THEN
+          ERROR(NumberErrL);
+      END;
+
+      InitEAN813(ParEncArrayL,SetEncArrayL);
+
+      CheckDigitL := STRCHECKSUM(BarcodeP, WeightL, 10);
+      BarInclCheckdL := BarcodeP + FORMAT(CheckDigitL); // Payload to encode
+      BarcodeBinaryBigText.ADDTEXT(SentinelL); // Add start sentinel
+
+      FOR i := 1 TO STRLEN(BarInclCheckdL) DO BEGIN
+        // Add centerguard
+        IF i = 5 THEN
+          BarcodeBinaryBigText.ADDTEXT(CenterGuardL);
+
+        EVALUATE(NumberL,FORMAT(BarInclCheckdL[i]));
+
+        IF i <= 4 THEN
+         BarcodeBinaryBigText.ADDTEXT(SetEncArrayL[NumberL+1][1])
+        ELSE
+          BarcodeBinaryBigText.ADDTEXT(SetEncArrayL[NumberL+1][3]);
+
+      END;
+
+      BarcodeBinaryBigText.ADDTEXT(SentinelL); // Add stop sentinel
+
+      BarsL  := BarcodeBinaryBigText.LENGTH;
+      LinesL := ROUND(BarsL * 0.25, 1, '>');
+
+      TempBlobV.Blob.CREATEOUTSTREAM(BmpHeaderOutStreamL);
+
+      CreateBMPHeader(BmpHeaderOutStreamL, BarsL, LinesL, SizeP, IsVerticalP);
+      CreateBarcodeDetail(LinesL, BarsL, SizeP, IsVerticalP, BmpHeaderOutStreamL);
+      TempBlobV.INSERT;
+    END;
+
+    LOCAL PROCEDURE CreateBMPHeader@1140005(VAR BmpHeaderOutStreamV@1000000000 : OutStream;ColsP@1000000001 : Integer;RowsP@1000000002 : Integer;SizeP@1000000004 : Integer;IsVerticalP@1000000006 : Boolean);
+    VAR
+      InfoCharL@1000000003 : Char;
+      ResolutionL@1000000005 : Integer;
+      WidthL@1000000007 : Integer;
+      HeightL@1000000008 : Integer;
+    BEGIN
+      ResolutionL := ROUND(2835 / SizeP,1,'=');
+
+      IF IsVerticalP THEN BEGIN
+        WidthL  := RowsP * SizeP;
+        HeightL := ColsP;
+      END ELSE BEGIN
+        WidthL  := ColsP * SizeP;
+        HeightL := RowsP * SizeP;
+      END;
+
+      InfoCharL := 'B' ;
+      BmpHeaderOutStreamV.WRITE(InfoCharL, 1);
+      InfoCharL := 'M' ;
+      BmpHeaderOutStreamV.WRITE(InfoCharL, 1);
+      BmpHeaderOutStreamV.WRITE(54 + RowsP * ColsP * 3, 4); // Size bmp
+      BmpHeaderOutStreamV.WRITE(0, 4);                      // Application specific
+      BmpHeaderOutStreamV.WRITE(54, 4);                     // Offset data pixels
+      BmpHeaderOutStreamV.WRITE(40, 4);                     // Number of bytes in header from this point
+      BmpHeaderOutStreamV.WRITE(WidthL, 4);                 // Width pixel
+      BmpHeaderOutStreamV.WRITE(HeightL, 4);                // Height pixel
+      BmpHeaderOutStreamV.WRITE(65536 * 24 + 1, 4);         // Color depth
+      BmpHeaderOutStreamV.WRITE(0, 4);                      // No. of color panes & bits per pixel
+      BmpHeaderOutStreamV.WRITE(0, 4);                      // Size bmp data
+      BmpHeaderOutStreamV.WRITE(ResolutionL, 4);            // Horizontal resolution
+      BmpHeaderOutStreamV.WRITE(ResolutionL, 4);            // Vertical resolution
+      BmpHeaderOutStreamV.WRITE(0, 4);                      // No. of colors in palette
+      BmpHeaderOutStreamV.WRITE(0, 4);                      // Important colors
+    END;
+
+    LOCAL PROCEDURE CreateBarcodeDetail@1000000002(LinesP@1000000005 : Integer;BarsP@1000000006 : Integer;SizeP@1000000009 : Integer;IsVerticalP@1000000010 : Boolean;VAR BmpHeaderOutStreamV@1000000007 : OutStream);
+    VAR
+      CharByteL@1000000001 : Byte;
+      ByteTextL@1000000002 : Text[1];
+      LineLoopL@1000000004 : Integer;
+      BarLoopL@1000000003 : Integer;
+      ChainFillerL@1000000000 : Integer;
+      SizeL@1000000008 : Integer;
+    BEGIN
+      IF IsVerticalP THEN BEGIN
+        FOR BarLoopL := 1 TO (BarcodeBinaryBigText.LENGTH) DO BEGIN
+
+          FOR LineLoopL := 1 TO (LinesP * SizeP) DO BEGIN
+            BarcodeBinaryBigText.GETSUBTEXT(ByteTextL, BarLoopL, 1);
+
+            IF ByteTextL = '1' THEN
+              CharByteL := 0
+            ELSE
+              CharByteL := 255;
+
+            BmpHeaderOutStreamV.WRITE(CharByteL, 1);
+            BmpHeaderOutStreamV.WRITE(CharByteL, 1);
+            BmpHeaderOutStreamV.WRITE(CharByteL, 1);
+          END;
+
+          FOR ChainFillerL := 1 TO (LineLoopL MOD 4) DO BEGIN
+            // Adding 0 bytes if needed - line end
+            CharByteL := 0;
+            BmpHeaderOutStreamV.WRITE(CharByteL, 1);
+          END;
+        END;
+      END ELSE BEGIN
+        FOR LineLoopL := 1 TO LinesP * SizeP DO BEGIN
+          FOR BarLoopL := 1 TO BarcodeBinaryBigText.LENGTH DO BEGIN
+            BarcodeBinaryBigText.GETSUBTEXT(ByteTextL, BarLoopL, 1);
+            IF ByteTextL = '1' THEN
+              CharByteL := 0
+            ELSE
+              CharByteL := 255;
+
+            FOR SizeL := 1 TO SizeP DO BEGIN
+              //Putting Pixel: Black or White
+              BmpHeaderOutStreamV.WRITE(CharByteL, 1);
+              BmpHeaderOutStreamV.WRITE(CharByteL, 1);
+              BmpHeaderOutStreamV.WRITE(CharByteL, 1);
+            END;
+          END;
+
+          FOR ChainFillerL := 1 TO ((BarLoopL* SizeP) MOD 4) DO BEGIN
+            //Adding 0 bytes if needed - line end
+            CharByteL := 0;
+            BmpHeaderOutStreamV.WRITE(CharByteL, 1);
+          END;
+        END;
+      END
+    END;
+
+    LOCAL PROCEDURE InitEAN813@1000000004(VAR ParEncArrayV@1000000001 : ARRAY [10] OF Text[6];VAR SetEncArrayV@1000000000 : ARRAY [10,10] OF Text[7]);
+    BEGIN
+      // Init constants
+      ParEncArrayV[1]  := 'OOOOOO'; // 0
+      ParEncArrayV[2]  := 'OOEOEE'; // 1
+      ParEncArrayV[3]  := 'OOEEOE'; // 2
+      ParEncArrayV[4]  := 'OOEEEO'; // 3
+      ParEncArrayV[5]  := 'OEOOEE'; // 4
+      ParEncArrayV[6]  := 'OEEOOE'; // 5
+      ParEncArrayV[7]  := 'OEEEOO'; // 6
+      ParEncArrayV[8]  := 'OEOEOE'; // 7
+      ParEncArrayV[9]  := 'OEOEEO'; // 8
+      ParEncArrayV[10] := 'OEEOEO'; // 9
+
+      // 0
+      SetEncArrayV[1][1] := '0001101';
+      SetEncArrayV[1][2] := '0100111';
+      SetEncArrayV[1][3] := '1110010';
+      // 1
+      SetEncArrayV[2][1] := '0011001';
+      SetEncArrayV[2][2] := '0110011';
+      SetEncArrayV[2][3] := '1100110';
+      // 2
+      SetEncArrayV[3][1] := '0010011';
+      SetEncArrayV[3][2] := '0011011';
+      SetEncArrayV[3][3] := '1101100';
+      // 3
+      SetEncArrayV[4][1] := '0111101';
+      SetEncArrayV[4][2] := '0100001';
+      SetEncArrayV[4][3] := '1000010';
+      // 4
+      SetEncArrayV[5][1] := '0100011';
+      SetEncArrayV[5][2] := '0011101';
+      SetEncArrayV[5][3] := '1011100';
+      // 5
+      SetEncArrayV[6][1] := '0110001';
+      SetEncArrayV[6][2] := '0111001';
+      SetEncArrayV[6][3] := '1001110';
+      // 6
+      SetEncArrayV[7][1] := '0101111';
+      SetEncArrayV[7][2] := '0000101';
+      SetEncArrayV[7][3] := '1010000';
+      // 7
+      SetEncArrayV[8][1] := '0111011';
+      SetEncArrayV[8][2] := '0010001';
+      SetEncArrayV[8][3] := '1000100';
+      // 8
+      SetEncArrayV[9][1] := '0110111';
+      SetEncArrayV[9][2] := '0001001';
+      SetEncArrayV[9][3] := '1001000';
+      // 9
+      SetEncArrayV[10][1] := '0001011';
+      SetEncArrayV[10][2] := '0010111';
+      SetEncArrayV[10][3] := '1110100';
+    END;
+
+    LOCAL PROCEDURE InitCode128@1000000003(VAR TmpCode128V@1000000000 : TEMPORARY Record 99016);
+    BEGIN
+      // "Code 01" - CharA
+      // "Text 01" - CharB
+      // "Code 03" - CharC
+      // "Int 01"  - ASCII
+      // "Code 04" - Value
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := ' ';
+      TmpCode128V."Text 01" := ' ';
+      TmpCode128V."Code 02" := ' ';
+      TmpCode128V."Code 03" := '00';
+      TmpCode128V."Int 01"  := 32;
+      TmpCode128V."Code 04" := '11011001100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '!';
+      TmpCode128V."Text 01" := '!';
+      TmpCode128V."Code 02" := '01';
+      TmpCode128V."Code 03" := '01';
+      TmpCode128V."Int 01"  := 33;
+      TmpCode128V."Code 04" := '11001101100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '"';
+      TmpCode128V."Text 01" := '"';
+      TmpCode128V."Code 02" := '02';
+      TmpCode128V."Code 03" := '02';
+      TmpCode128V."Int 01"  := 34;
+      TmpCode128V."Code 04" := '11001100110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '#';
+      TmpCode128V."Text 01" := '#';
+      TmpCode128V."Code 02" := '03';
+      TmpCode128V."Code 03" := '03';
+      TmpCode128V."Int 01"  := 35;
+      TmpCode128V."Code 04" := '10010011000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '$';
+      TmpCode128V."Text 01" := '$';
+      TmpCode128V."Code 02" := '04';
+      TmpCode128V."Code 03" := '04';
+      TmpCode128V."Int 01"  := 36;
+      TmpCode128V."Code 04" := '10010001100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '%';
+      TmpCode128V."Text 01" := '%';
+      TmpCode128V."Code 02" := '05';
+      TmpCode128V."Code 03" := '05';
+      TmpCode128V."Int 01"  := 37;
+      TmpCode128V."Code 04" := '10001001100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '&';
+      TmpCode128V."Text 01" := '&';
+      TmpCode128V."Code 02" := '06';
+      TmpCode128V."Code 03" := '06';
+      TmpCode128V."Int 01"  := 38;
+      TmpCode128V."Code 04" := '10011001000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '''';
+      TmpCode128V."Text 01" := '''';
+      TmpCode128V."Code 02" := '07';
+      TmpCode128V."Code 03" := '07';
+      TmpCode128V."Int 01"  := 39;
+      TmpCode128V."Code 04" := '10011000100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '(';
+      TmpCode128V."Text 01" := '(';
+      TmpCode128V."Code 02" := '08';
+      TmpCode128V."Code 03" := '08';
+      TmpCode128V."Int 01"  := 40;
+      TmpCode128V."Code 04" := '10001100100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := ')';
+      TmpCode128V."Text 01" := ')';
+      TmpCode128V."Code 02" := '09';
+      TmpCode128V."Code 03" := '09';
+      TmpCode128V."Int 01"  := 41;
+      TmpCode128V."Code 04" := '11001001000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '*';
+      TmpCode128V."Text 01" := '*';
+      TmpCode128V."Code 02" := '10';
+      TmpCode128V."Code 03" := '10';
+      TmpCode128V."Int 01"  := 42;
+      TmpCode128V."Code 04" := '11001000100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '+';
+      TmpCode128V."Text 01" := '+';
+      TmpCode128V."Code 02" := '11';
+      TmpCode128V."Code 03" := '11';
+      TmpCode128V."Int 01"  := 43;
+      TmpCode128V."Code 04" := '11000100100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := ',';
+      TmpCode128V."Text 01" := ',';
+      TmpCode128V."Code 02" := '12';
+      TmpCode128V."Code 03" := '12';
+      TmpCode128V."Int 01"  := 44;
+      TmpCode128V."Code 04" := '10110011100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '-';
+      TmpCode128V."Text 01" := '-';
+      TmpCode128V."Code 02" := '13';
+      TmpCode128V."Code 03" := '13';
+      TmpCode128V."Int 01"  := 45;
+      TmpCode128V."Code 04" := '10011011100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '.';
+      TmpCode128V."Text 01" := '.';
+      TmpCode128V."Code 02" := '14';
+      TmpCode128V."Code 03" := '14';
+      TmpCode128V."Int 01"  := 46;
+      TmpCode128V."Code 04" := '10011001110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '/';
+      TmpCode128V."Text 01" := '/';
+      TmpCode128V."Code 02" := '15';
+      TmpCode128V."Code 03" := '15';
+      TmpCode128V."Int 01"  := 47;
+      TmpCode128V."Code 04" := '10111001100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '0';
+      TmpCode128V."Text 01" := '0';
+      TmpCode128V."Code 02" := '16';
+      TmpCode128V."Code 03" := '16';
+      TmpCode128V."Int 01"  := 48;
+      TmpCode128V."Code 04" := '10011101100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '1';
+      TmpCode128V."Text 01" := '1';
+      TmpCode128V."Code 02" := '17';
+      TmpCode128V."Code 03" := '17';
+      TmpCode128V."Int 01"  := 49;
+      TmpCode128V."Code 04" := '10011100110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '2';
+      TmpCode128V."Text 01" := '2';
+      TmpCode128V."Code 02" := '18';
+      TmpCode128V."Code 03" := '18';
+      TmpCode128V."Int 01"  := 50;
+      TmpCode128V."Code 04" := '11001110010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '3';
+      TmpCode128V."Text 01" := '3';
+      TmpCode128V."Code 02" := '19';
+      TmpCode128V."Code 03" := '19';
+      TmpCode128V."Int 01"  := 51;
+      TmpCode128V."Code 04" := '11001011100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '4';
+      TmpCode128V."Text 01" := '4';
+      TmpCode128V."Code 02" := '20';
+      TmpCode128V."Code 03" := '20';
+      TmpCode128V."Int 01"  := 52;
+      TmpCode128V."Code 04" := '11001001110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '5';
+      TmpCode128V."Text 01" := '5';
+      TmpCode128V."Code 02" := '21';
+      TmpCode128V."Code 03" := '21';
+      TmpCode128V."Int 01"  := 53;
+      TmpCode128V."Code 04" := '11011100100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '6';
+      TmpCode128V."Text 01" := '6';
+      TmpCode128V."Code 02" := '22';
+      TmpCode128V."Code 03" := '22';
+      TmpCode128V."Int 01"  := 54;
+      TmpCode128V."Code 04" := '11001110100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '7';
+      TmpCode128V."Text 01" := '7';
+      TmpCode128V."Code 02" := '23';
+      TmpCode128V."Code 03" := '23';
+      TmpCode128V."Int 01"  := 55;
+      TmpCode128V."Code 04" := '11101101110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '8';
+      TmpCode128V."Text 01" := '8';
+      TmpCode128V."Code 02" := '24';
+      TmpCode128V."Code 03" := '24';
+      TmpCode128V."Int 01"  := 56;
+      TmpCode128V."Code 04" := '11101001100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '9';
+      TmpCode128V."Text 01" := '9';
+      TmpCode128V."Code 02" := '25';
+      TmpCode128V."Code 03" := '25';
+      TmpCode128V."Int 01"  := 57;
+      TmpCode128V."Code 04" := '11100101100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := ':';
+      TmpCode128V."Text 01" := ':';
+      TmpCode128V."Code 02" := '26';
+      TmpCode128V."Code 03" := '26';
+      TmpCode128V."Int 01"  := 58;
+      TmpCode128V."Code 04" := '11100100110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := ';';
+      TmpCode128V."Text 01" := ';';
+      TmpCode128V."Code 02" := '27';
+      TmpCode128V."Code 03" := '27';
+      TmpCode128V."Int 01"  := 59;
+      TmpCode128V."Code 04" := '11101100100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '<';
+      TmpCode128V."Text 01" := '<';
+      TmpCode128V."Code 02" := '28';
+      TmpCode128V."Code 03" := '28';
+      TmpCode128V."Int 01"  := 60;
+      TmpCode128V."Code 04" := '11100110100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '=';
+      TmpCode128V."Text 01" := '=';
+      TmpCode128V."Code 02" := '29';
+      TmpCode128V."Code 03" := '29';
+      TmpCode128V."Int 01"  := 61;
+      TmpCode128V."Code 04" := '11100110010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '>';
+      TmpCode128V."Text 01" := '>';
+      TmpCode128V."Code 02" := '30';
+      TmpCode128V."Code 03" := '30';
+      TmpCode128V."Int 01"  := 62;
+      TmpCode128V."Code 04" := '11011011000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '?';
+      TmpCode128V."Text 01" := '?';
+      TmpCode128V."Code 02" := '31';
+      TmpCode128V."Code 03" := '31';
+      TmpCode128V."Int 01"  := 63;
+      TmpCode128V."Code 04" := '11011000110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '@';
+      TmpCode128V."Text 01" := '@';
+      TmpCode128V."Code 02" := '32';
+      TmpCode128V."Code 03" := '32';
+      TmpCode128V."Int 01"  := 64;
+      TmpCode128V."Code 04" := '11000110110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'A';
+      TmpCode128V."Text 01" := 'A';
+      TmpCode128V."Code 02" := '33';
+      TmpCode128V."Code 03" := '33';
+      TmpCode128V."Int 01"  := 65;
+      TmpCode128V."Code 04" := '10100011000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'B';
+      TmpCode128V."Text 01" := 'B';
+      TmpCode128V."Code 02" := '34';
+      TmpCode128V."Code 03" := '34';
+      TmpCode128V."Int 01"  := 66;
+      TmpCode128V."Code 04" := '10001011000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'C';
+      TmpCode128V."Text 01" := 'C';
+      TmpCode128V."Code 02" := '35';
+      TmpCode128V."Code 03" := '35';
+      TmpCode128V."Int 01"  := 67;
+      TmpCode128V."Code 04" := '10001000110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'D';
+      TmpCode128V."Text 01" := 'D';
+      TmpCode128V."Code 02" := '36';
+      TmpCode128V."Code 03" := '36';
+      TmpCode128V."Int 01"  := 68;
+      TmpCode128V."Code 04" := '10110001000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'E';
+      TmpCode128V."Text 01" := 'E';
+      TmpCode128V."Code 02" := '37';
+      TmpCode128V."Code 03" := '37';
+      TmpCode128V."Int 01"  := 69;
+      TmpCode128V."Code 04" := '10001101000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'F';
+      TmpCode128V."Text 01" := 'F';
+      TmpCode128V."Code 02" := '38';
+      TmpCode128V."Code 03" := '38';
+      TmpCode128V."Int 01"  := 70;
+      TmpCode128V."Code 04" := '10001100010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'G';
+      TmpCode128V."Text 01" := 'G';
+      TmpCode128V."Code 02" := '39';
+      TmpCode128V."Code 03" := '39';
+      TmpCode128V."Int 01"  := 71;
+      TmpCode128V."Code 04" := '11010001000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'H';
+      TmpCode128V."Text 01" := 'H';
+      TmpCode128V."Code 02" := '40';
+      TmpCode128V."Code 03" := '40';
+      TmpCode128V."Int 01"  := 72;
+      TmpCode128V."Code 04" := '11000101000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'I';
+      TmpCode128V."Text 01" := 'I';
+      TmpCode128V."Code 02" := '41';
+      TmpCode128V."Code 03" := '41';
+      TmpCode128V."Int 01"  := 73;
+      TmpCode128V."Code 04" := '11000100010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'J';
+      TmpCode128V."Text 01" := 'J';
+      TmpCode128V."Code 02" := '42';
+      TmpCode128V."Code 03" := '42';
+      TmpCode128V."Int 01"  := 74;
+      TmpCode128V."Code 04" := '10110111000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'K';
+      TmpCode128V."Text 01" := 'K';
+      TmpCode128V."Code 02" := '43';
+      TmpCode128V."Code 03" := '43';
+      TmpCode128V."Int 01"  := 75;
+      TmpCode128V."Code 04" := '10110001110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'L';
+      TmpCode128V."Text 01" := 'L';
+      TmpCode128V."Code 02" := '44';
+      TmpCode128V."Code 03" := '44';
+      TmpCode128V."Int 01"  := 76;
+      TmpCode128V."Code 04" := '10001101110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'M';
+      TmpCode128V."Text 01" := 'M';
+      TmpCode128V."Code 02" := '45';
+      TmpCode128V."Code 03" := '45';
+      TmpCode128V."Int 01"  := 77;
+      TmpCode128V."Code 04" := '10111011000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'N';
+      TmpCode128V."Text 01" := 'N';
+      TmpCode128V."Code 02" := '46';
+      TmpCode128V."Code 03" := '46';
+      TmpCode128V."Int 01"  := 78;
+      TmpCode128V."Code 04" := '10111000110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'O';
+      TmpCode128V."Text 01" := 'O';
+      TmpCode128V."Code 02" := '47';
+      TmpCode128V."Code 03" := '47';
+      TmpCode128V."Int 01"  := 79;
+      TmpCode128V."Code 04" := '10001110110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'P';
+      TmpCode128V."Text 01" := 'P';
+      TmpCode128V."Code 02" := '48';
+      TmpCode128V."Code 03" := '48';
+      TmpCode128V."Int 01"  := 80;
+      TmpCode128V."Code 04" := '11101110110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'Q';
+      TmpCode128V."Text 01" := 'Q';
+      TmpCode128V."Code 02" := '49';
+      TmpCode128V."Code 03" := '49';
+      TmpCode128V."Int 01"  := 81;
+      TmpCode128V."Code 04" := '11010001110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'R';
+      TmpCode128V."Text 01" := 'R';
+      TmpCode128V."Code 02" := '50';
+      TmpCode128V."Code 03" := '50';
+      TmpCode128V."Int 01"  := 82;
+      TmpCode128V."Code 04" := '11000101110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'S';
+      TmpCode128V."Text 01" := 'S';
+      TmpCode128V."Code 02" := '51';
+      TmpCode128V."Code 03" := '51';
+      TmpCode128V."Int 01"  := 83;
+      TmpCode128V."Code 04" := '11011101000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'T';
+      TmpCode128V."Text 01" := 'T';
+      TmpCode128V."Code 02" := '52';
+      TmpCode128V."Code 03" := '52';
+      TmpCode128V."Int 01"  := 84;
+      TmpCode128V."Code 04" := '11011100010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'U';
+      TmpCode128V."Text 01" := 'U';
+      TmpCode128V."Code 02" := '53';
+      TmpCode128V."Code 03" := '53';
+      TmpCode128V."Int 01"  := 85;
+      TmpCode128V."Code 04" := '11011101110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'V';
+      TmpCode128V."Text 01" := 'V';
+      TmpCode128V."Code 02" := '54';
+      TmpCode128V."Code 03" := '54';
+      TmpCode128V."Int 01"  := 86;
+      TmpCode128V."Code 04" := '11101011000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'W';
+      TmpCode128V."Text 01" := 'W';
+      TmpCode128V."Code 02" := '55';
+      TmpCode128V."Code 03" := '55';
+      TmpCode128V."Int 01"  := 87;
+      TmpCode128V."Code 04" := '11101000110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'X';
+      TmpCode128V."Text 01" := 'X';
+      TmpCode128V."Code 02" := '56';
+      TmpCode128V."Code 03" := '56';
+      TmpCode128V."Int 01"  := 88;
+      TmpCode128V."Code 04" := '11100010110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'Y';
+      TmpCode128V."Text 01" := 'Y';
+      TmpCode128V."Code 02" := '57';
+      TmpCode128V."Code 03" := '57';
+      TmpCode128V."Int 01"  := 89;
+      TmpCode128V."Code 04" := '11101101000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'Z';
+      TmpCode128V."Text 01" := 'Z';
+      TmpCode128V."Code 02" := '58';
+      TmpCode128V."Code 03" := '58';
+      TmpCode128V."Int 01"  := 90;
+      TmpCode128V."Code 04" := '11101100010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '[';
+      TmpCode128V."Text 01" := '[';
+      TmpCode128V."Code 02" := '59';
+      TmpCode128V."Code 03" := '59';
+      TmpCode128V."Int 01"  := 91;
+      TmpCode128V."Code 04" := '11100011010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '\';
+      TmpCode128V."Text 01" := '\';
+      TmpCode128V."Code 02" := '60';
+      TmpCode128V."Code 03" := '60';
+      TmpCode128V."Int 01"  := 92;
+      TmpCode128V."Code 04" := '11101111010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := ']';
+      TmpCode128V."Text 01" := ']';
+      TmpCode128V."Code 02" := '61';
+      TmpCode128V."Code 03" := '61';
+      TmpCode128V."Int 01"  := 93;
+      TmpCode128V."Code 04" := '11001000010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '^';
+      TmpCode128V."Text 01" := '^';
+      TmpCode128V."Code 02" := '62';
+      TmpCode128V."Code 03" := '62';
+      TmpCode128V."Int 01"  := 94;
+      TmpCode128V."Code 04" := '11110001010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := '_';
+      TmpCode128V."Text 01" := '_';
+      TmpCode128V."Code 02" := '63';
+      TmpCode128V."Code 03" := '63';
+      TmpCode128V."Int 01"  := 95;
+      TmpCode128V."Code 04" := '10100110000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'NUL';
+      TmpCode128V."Text 01" := '`';
+      TmpCode128V."Code 02" := '64';
+      TmpCode128V."Code 03" := '64';
+      TmpCode128V."Int 01"  := 96;
+      TmpCode128V."Code 04" := '10100001100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'SOH';
+      TmpCode128V."Text 01" := 'a';
+      TmpCode128V."Code 02" := '65';
+      TmpCode128V."Code 03" := '65';
+      TmpCode128V."Int 01"  := 97;
+      TmpCode128V."Code 04" := '10010110000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'STX';
+      TmpCode128V."Text 01" := 'b';
+      TmpCode128V."Code 02" := '66';
+      TmpCode128V."Code 03" := '66';
+      TmpCode128V."Int 01"  := 98;
+      TmpCode128V."Code 04" := '10010000110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'ETX';
+      TmpCode128V."Text 01" := 'c';
+      TmpCode128V."Code 02" := '67';
+      TmpCode128V."Code 03" := '67';
+      TmpCode128V."Int 01"  := 99;
+      TmpCode128V."Code 04" := '10000101100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'EOT';
+      TmpCode128V."Text 01" := 'd';
+      TmpCode128V."Code 02" := '68';
+      TmpCode128V."Code 03" := '68';
+      TmpCode128V."Int 01"  := 100;
+      TmpCode128V."Code 04" := '10000100110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'ENQ';
+      TmpCode128V."Text 01" := 'e';
+      TmpCode128V."Code 02" := '69';
+      TmpCode128V."Code 03" := '69';
+      TmpCode128V."Int 01"  := 101;
+      TmpCode128V."Code 04" := '10110010000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'ACK';
+      TmpCode128V."Text 01" := 'f';
+      TmpCode128V."Code 02" := '70';
+      TmpCode128V."Code 03" := '70';
+      TmpCode128V."Int 01"  := 102;
+      TmpCode128V."Code 04" := '10110000100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'BEL';
+      TmpCode128V."Text 01" := 'g';
+      TmpCode128V."Code 02" := '71';
+      TmpCode128V."Code 03" := '71';
+      TmpCode128V."Int 01"  := 103;
+      TmpCode128V."Code 04" := '10011010000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'BS';
+      TmpCode128V."Text 01" := 'h';
+      TmpCode128V."Code 02" := '72';
+      TmpCode128V."Code 03" := '72';
+      TmpCode128V."Int 01"  := 104;
+      TmpCode128V."Code 04" := '10011000010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'HT';
+      TmpCode128V."Text 01" := 'i';
+      TmpCode128V."Code 02" := '73';
+      TmpCode128V."Code 03" := '73';
+      TmpCode128V."Int 01"  := 105;
+      TmpCode128V."Code 04" := '10000110100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'LF';
+      TmpCode128V."Text 01" := 'j';
+      TmpCode128V."Code 02" := '74';
+      TmpCode128V."Code 03" := '74';
+      TmpCode128V."Int 01"  := 106;
+      TmpCode128V."Code 04" := '10000110010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'VT';
+      TmpCode128V."Text 01" := 'k';
+      TmpCode128V."Code 02" := '75';
+      TmpCode128V."Code 03" := '75';
+      TmpCode128V."Int 01"  := 107;
+      TmpCode128V."Code 04" := '11000010010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'FF';
+      TmpCode128V."Text 01" := 'l';
+      TmpCode128V."Code 02" := '76';
+      TmpCode128V."Code 03" := '76';
+      TmpCode128V."Int 01"  := 108;
+      TmpCode128V."Code 04" := '11001010000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'CR';
+      TmpCode128V."Text 01" := 'm';
+      TmpCode128V."Code 02" := '77';
+      TmpCode128V."Code 03" := '77';
+      TmpCode128V."Int 01"  := 109;
+      TmpCode128V."Code 04" := '11110111010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'SO';
+      TmpCode128V."Text 01" := 'n';
+      TmpCode128V."Code 02" := '78';
+      TmpCode128V."Code 03" := '78';
+      TmpCode128V."Int 01"  := 110;
+      TmpCode128V."Code 04" := '11000010100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'SI';
+      TmpCode128V."Text 01" := 'o';
+      TmpCode128V."Code 02" := '79';
+      TmpCode128V."Code 03" := '79';
+      TmpCode128V."Int 01"  := 111;
+      TmpCode128V."Code 04" := '10001111010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'DLE';
+      TmpCode128V."Text 01" := 'p';
+      TmpCode128V."Code 02" := '80';
+      TmpCode128V."Code 03" := '80';
+      TmpCode128V."Int 01"  := 112;
+      TmpCode128V."Code 04" := '10100111100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'DC1';
+      TmpCode128V."Text 01" := 'q';
+      TmpCode128V."Code 02" := '81';
+      TmpCode128V."Code 03" := '81';
+      TmpCode128V."Int 01"  := 113;
+      TmpCode128V."Code 04" := '10010111100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'DC2';
+      TmpCode128V."Text 01" := 'r';
+      TmpCode128V."Code 02" := '82';
+      TmpCode128V."Code 03" := '82';
+      TmpCode128V."Int 01"  := 114;
+      TmpCode128V."Code 04" := '10010011110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'DC3';
+      TmpCode128V."Text 01" := 's';
+      TmpCode128V."Code 02" := '83';
+      TmpCode128V."Code 03" := '83';
+      TmpCode128V."Int 01"  := 115;
+      TmpCode128V."Code 04" := '10111100100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'DC4';
+      TmpCode128V."Text 01" := 't';
+      TmpCode128V."Code 02" := '84';
+      TmpCode128V."Code 03" := '84';
+      TmpCode128V."Int 01"  := 116;
+      TmpCode128V."Code 04" := '10011110100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'NAK';
+      TmpCode128V."Text 01" := 'u';
+      TmpCode128V."Code 02" := '85';
+      TmpCode128V."Code 03" := '85';
+      TmpCode128V."Int 01"  := 117;
+      TmpCode128V."Code 04" := '10011110010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'SYN';
+      TmpCode128V."Text 01" := 'v';
+      TmpCode128V."Code 02" := '86';
+      TmpCode128V."Code 03" := '86';
+      TmpCode128V."Int 01"  := 118;
+      TmpCode128V."Code 04" := '11110100100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'ETB';
+      TmpCode128V."Text 01" := 'w';
+      TmpCode128V."Code 02" := '87';
+      TmpCode128V."Code 03" := '87';
+      TmpCode128V."Int 01"  := 119;
+      TmpCode128V."Code 04" := '11110010100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'CAN';
+      TmpCode128V."Text 01" := 'x';
+      TmpCode128V."Code 02" := '88';
+      TmpCode128V."Code 03" := '88';
+      TmpCode128V."Int 01"  := 120;
+      TmpCode128V."Code 04" := '11110010010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'EM';
+      TmpCode128V."Text 01" := 'y';
+      TmpCode128V."Code 02" := '89';
+      TmpCode128V."Code 03" := '89';
+      TmpCode128V."Int 01"  := 121;
+      TmpCode128V."Code 04" := '11011011110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'SUB';
+      TmpCode128V."Text 01" := 'z';
+      TmpCode128V."Code 02" := '90';
+      TmpCode128V."Code 03" := '90';
+      TmpCode128V."Int 01"  := 122;
+      TmpCode128V."Code 04" := '11011110110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'ESC';
+      TmpCode128V."Text 01" := '{';
+      TmpCode128V."Code 02" := '91';
+      TmpCode128V."Code 03" := '91';
+      TmpCode128V."Int 01"  := 123;
+      TmpCode128V."Code 04" := '11110110110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'FS';
+      TmpCode128V."Text 01" := '|';
+      TmpCode128V."Code 02" := '92';
+      TmpCode128V."Code 03" := '92';
+      TmpCode128V."Int 01"  := 124;
+      TmpCode128V."Code 04" := '10101111000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'GS';
+      TmpCode128V."Text 01" := '}';
+      TmpCode128V."Code 02" := '93';
+      TmpCode128V."Code 03" := '93';
+      TmpCode128V."Int 01"  := 125;
+      TmpCode128V."Code 04" := '10100011110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'RS';
+      TmpCode128V."Text 01" := '~';
+      TmpCode128V."Code 02" := '94';
+      TmpCode128V."Code 03" := '94';
+      TmpCode128V."Int 01"  := 126;
+      TmpCode128V."Code 04" := '10001011110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'US';
+      TmpCode128V."Text 01" := 'DEL';
+      TmpCode128V."Code 02" := '95';
+      TmpCode128V."Code 03" := '95';
+      TmpCode128V."Int 01"  := 195;
+      TmpCode128V."Code 04" := '10111101000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'FNC3';
+      TmpCode128V."Text 01" := 'FNC3';
+      TmpCode128V."Code 02" := '96';
+      TmpCode128V."Code 03" := '96';
+      TmpCode128V."Int 01"  := 196;
+      TmpCode128V."Code 04" := '10111100010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'FNC2';
+      TmpCode128V."Text 01" := 'FNC2';
+      TmpCode128V."Code 02" := '97';
+      TmpCode128V."Code 03" := '97';
+      TmpCode128V."Int 01"  := 197;
+      TmpCode128V."Code 04" := '11110101000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'SHIFT';
+      TmpCode128V."Text 01" := 'SHIFT';
+      TmpCode128V."Code 02" := '98';
+      TmpCode128V."Code 03" := '98';
+      TmpCode128V."Int 01"  := 198;
+      TmpCode128V."Code 04" := '11110100010';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'CODEC';
+      TmpCode128V."Text 01" := 'CODEC';
+      TmpCode128V."Code 02" := '99';
+      TmpCode128V."Code 03" := '99';
+      TmpCode128V."Int 01"  := 199;
+      TmpCode128V."Code 04" := '10111011110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'CODEB';
+      TmpCode128V."Text 01" := 'FNC4';
+      TmpCode128V."Code 02" := 'CODEB';
+      TmpCode128V."Code 03" := '100';
+      TmpCode128V."Int 01"  := 200;
+      TmpCode128V."Code 04" := '10111101110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'FNC4';
+      TmpCode128V."Text 01" := 'CODEA';
+      TmpCode128V."Code 02" := 'CODEA';
+      TmpCode128V."Code 03" := '101';
+      TmpCode128V."Int 01"  := 201;
+      TmpCode128V."Code 04" := '11101011110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'FNC1';
+      TmpCode128V."Text 01" := 'FNC1';
+      TmpCode128V."Code 02" := 'FNC1';
+      TmpCode128V."Code 03" := '102';
+      TmpCode128V."Int 01"  := 202;
+      TmpCode128V."Code 04" := '11110101110';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'STARTA';
+      TmpCode128V."Text 01" := 'STARTA';
+      TmpCode128V."Code 02" := 'STARTA';
+      TmpCode128V."Code 03" := '103';
+      TmpCode128V."Int 01"  := 203;
+      TmpCode128V."Code 04" := '11010000100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'STARTB';
+      TmpCode128V."Text 01" := 'STARTB';
+      TmpCode128V."Code 02" := 'STARTB';
+      TmpCode128V."Code 03" := '104';
+      TmpCode128V."Int 01"  := 204;
+      TmpCode128V."Code 04" := '11010010000';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'STARTC';
+      TmpCode128V."Text 01" := 'STARTC';
+      TmpCode128V."Code 02" := 'STARTC';
+      TmpCode128V."Code 03" := '105';
+      TmpCode128V."Int 01"  := 205;
+      TmpCode128V."Code 04" := '11010011100';
+      TmpCode128V.INSERT;
+
+      TmpCode128V.INIT;
+      TmpCode128V."Code 01" := 'STOP';
+      TmpCode128V."Text 01" := 'STOP';
+      TmpCode128V."Code 02" := 'STOP';
+      TmpCode128V."Code 03" := '';
+      TmpCode128V."Int 01"  := 206;
+      TmpCode128V."Code 04" := '11000111010';
+      TmpCode128V.INSERT;
+    END;
+
+    LOCAL PROCEDURE InitCode39@1000000006(VAR TmpCode39L@1000000000 : TEMPORARY Record 99016);
+    BEGIN
+      // This is not the extended code 39 encoding table
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '0';
+      TmpCode39L."Code 03" := '0';
+      TmpCode39L."Code 04" := '101001101101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '1';
+      TmpCode39L."Code 03" := '1';
+      TmpCode39L."Code 04" := '110100101011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '2';
+      TmpCode39L."Code 03" := '2';
+      TmpCode39L."Code 04" := '101100101011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '3';
+      TmpCode39L."Code 03" := '3';
+      TmpCode39L."Code 04" := '110110010101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '4';
+      TmpCode39L."Code 03" := '4';
+      TmpCode39L."Code 04" := '101001101011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '5';
+      TmpCode39L."Code 03" := '5';
+      TmpCode39L."Code 04" := '110100110101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '6';
+      TmpCode39L."Code 03" := '6';
+      TmpCode39L."Code 04" := '101100110101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '7';
+      TmpCode39L."Code 03" := '7';
+      TmpCode39L."Code 04" := '101001011011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '8';
+      TmpCode39L."Code 03" := '8';
+      TmpCode39L."Code 04" := '110100101101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '9';
+      TmpCode39L."Code 03" := '9';
+      TmpCode39L."Code 04" := '101100101101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'A';
+      TmpCode39L."Code 03" := '10';
+      TmpCode39L."Code 04" := '110101001011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'B';
+      TmpCode39L."Code 03" := '11';
+      TmpCode39L."Code 04" := '101101001011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'C';
+      TmpCode39L."Code 03" := '12';
+      TmpCode39L."Code 04" := '110110100101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'D';
+      TmpCode39L."Code 03" := '13';
+      TmpCode39L."Code 04" := '101011001011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'E';
+      TmpCode39L."Code 03" := '14';
+      TmpCode39L."Code 04" := '110101100101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'F';
+      TmpCode39L."Code 03" := '15';
+      TmpCode39L."Code 04" := '101101100101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'G';
+      TmpCode39L."Code 03" := '16';
+      TmpCode39L."Code 04" := '101010011011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'H';
+      TmpCode39L."Code 03" := '17';
+      TmpCode39L."Code 04" := '110101001101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'I';
+      TmpCode39L."Code 03" := '18';
+      TmpCode39L."Code 04" := '101101001101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'J';
+      TmpCode39L."Code 03" := '19';
+      TmpCode39L."Code 04" := '101011001101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'K';
+      TmpCode39L."Code 03" := '20';
+      TmpCode39L."Code 04" := '110101010011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'L';
+      TmpCode39L."Code 03" := '21';
+      TmpCode39L."Code 04" := '101101010011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'M';
+      TmpCode39L."Code 03" := '22';
+      TmpCode39L."Code 04" := '110110101001';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'N';
+      TmpCode39L."Code 03" := '23';
+      TmpCode39L."Code 04" := '101011010011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'O';
+      TmpCode39L."Code 03" := '24';
+      TmpCode39L."Code 04" := '110101101001';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'P';
+      TmpCode39L."Code 03" := '25';
+      TmpCode39L."Code 04" := '101101101001';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'Q';
+      TmpCode39L."Code 03" := '26';
+      TmpCode39L."Code 04" := '101010110011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'R';
+      TmpCode39L."Code 03" := '27';
+      TmpCode39L."Code 04" := '110101011001';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'S';
+      TmpCode39L."Code 03" := '28';
+      TmpCode39L."Code 04" := '101101011001';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'T';
+      TmpCode39L."Code 03" := '29';
+      TmpCode39L."Code 04" := '101011011001';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'U';
+      TmpCode39L."Code 03" := '30';
+      TmpCode39L."Code 04" := '110010101011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'V';
+      TmpCode39L."Code 03" := '31';
+      TmpCode39L."Code 04" := '100110101011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'W';
+      TmpCode39L."Code 03" := '32';
+      TmpCode39L."Code 04" := '110011010101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'X';
+      TmpCode39L."Code 03" := '33';
+      TmpCode39L."Code 04" := '100101101011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'Y';
+      TmpCode39L."Code 03" := '34';
+      TmpCode39L."Code 04" := '110010110101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := 'Z';
+      TmpCode39L."Code 03" := '35';
+      TmpCode39L."Code 04" := '100110110101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '-';
+      TmpCode39L."Code 03" := '36';
+      TmpCode39L."Code 04" := '100101011011';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '.';
+      TmpCode39L."Code 03" := '37';
+      TmpCode39L."Code 04" := '110010101101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := ' ';
+      TmpCode39L."Code 03" := '38';
+      TmpCode39L."Code 04" := '100110101101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '$';
+      TmpCode39L."Code 03" := '39';
+      TmpCode39L."Code 04" := '100100100101';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '/';
+      TmpCode39L."Code 03" := '40';
+      TmpCode39L."Code 04" := '100100101001';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '+';
+      TmpCode39L."Code 03" := '41';
+      TmpCode39L."Code 04" := '100101001001';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '%';
+      TmpCode39L."Code 03" := '42';
+      TmpCode39L."Code 04" := '101001001001';
+      TmpCode39L.INSERT;
+
+      TmpCode39L.INIT;
+      TmpCode39L."Code 01" := '*';
+      TmpCode39L."Code 03" := '';
+      TmpCode39L."Code 04" := '100101101101';
+      TmpCode39L.INSERT;
+    END;
+
+    LOCAL PROCEDURE GettxtCode128@1101502005(CurrentCharSetL@1101502001 : Char;BarcodeP@1000000001 : Text) ReturnTxtR : Text;
+    VAR
+      TmpCode128L@1000000002 : TEMPORARY Record 99016;
+      TextArrayL@1000000004 : ARRAY [2,200] OF Text[30];
+      TerminationBarL@1000000010 : Text[2];
+      CharL@1101502000 : Char;
+      WeightSumL@1000000006 : Integer;
+      ConvIntL@1000000008 : Integer;
+      CheckDigitL@1000000011 : Integer;
+      ConvIntL1@1000000009 : Integer;
+      ConvIntL2@1000000012 : Integer;
+      IsNumberL@1000000013 : Boolean;
+      lintLines@1000000015 : Integer;
+      lintBars@1000000014 : Integer;
+      i@1000000003 : Integer;
+      j@1000000007 : Integer;
+    BEGIN
+      TmpCode128L.DELETEALL;
+      BarcodeTxt := '';
+      InitCode128(TmpCode128L);
+
+        IsNumberL := FALSE;
+        TmpCode128L.RESET;
+        IF (CurrentCharSetL = 'A') THEN BEGIN
+            TmpCode128L.GET('STARTA');
+            IsNumberL := FALSE;
+        END;
+        IF (CurrentCharSetL = 'B') THEN BEGIN
+            TmpCode128L.GET('STARTB');
+            IsNumberL := FALSE;
+        END;
+        IF (CurrentCharSetL = 'C') THEN BEGIN
+            TmpCode128L.GET('STARTC');
+            IsNumberL := TRUE;
+        END;
+        EVALUATE(ConvIntL, TmpCode128L."Code 03");
+        WeightSumL := ConvIntL;
+        CharL := TmpCode128L."Int 01";
+        BarcodeTxt += FORMAT(CharL);
+
+      FOR i := 1 TO STRLEN(BarcodeP) DO BEGIN
+        j += 1;
+
+        CASE CurrentCharSetL OF
+          'A':
+            BEGIN
+              TmpCode128L.GET(FORMAT(BarcodeP[i]));
+
+              EVALUATE(ConvIntL, TmpCode128L."Code 03");
+
+              WeightSumL += ConvIntL * j;
+              CharL := TmpCode128L."Int 01";
+              BarcodeTxt += FORMAT(CharL);
+            END;
+          'B':
+            BEGIN
+              TmpCode128L.RESET;
+              TmpCode128L.SETCURRENTKEY("Text 01");
+              TmpCode128L.SETRANGE("Text 01", FORMAT(BarcodeP[i]));
+              IF TmpCode128L.FINDSET THEN REPEAT
+                IF TmpCode128L."Text 01" = FORMAT(BarcodeP[i]) THEN BEGIN
+                  EVALUATE(ConvIntL, TmpCode128L."Code 03");
+
+                  WeightSumL += ConvIntL * j;
+                  CharL := TmpCode128L."Int 01";
+                  BarcodeTxt += FORMAT(CharL);
+                END;
+              UNTIL TmpCode128L.NEXT=0;
+
+            END;
+          'C':
+            BEGIN
+              TmpCode128L.RESET;
+              TmpCode128L.SETCURRENTKEY("Code 03");
+              TmpCode128L.SETRANGE("Code 03", (FORMAT(BarcodeP[i]) + FORMAT(BarcodeP[i + 1])));
+              TmpCode128L.FINDFIRST;
+
+              EVALUATE(ConvIntL, TmpCode128L."Code 03");
+              WeightSumL += ConvIntL * j;
+
+              CharL := TmpCode128L."Int 01";
+              BarcodeTxt += FORMAT(CharL);
+              i += 1;
+            END;
+        END;
+      END;
+
+      CheckDigitL := WeightSumL MOD 103;
+
+      // Add check digit
+      TmpCode128L.RESET;
+      IF CheckDigitL <= 9 THEN
+        TmpCode128L.SETRANGE("Code 03", '0' + FORMAT(CheckDigitL))
+      ELSE
+        TmpCode128L.SETRANGE("Code 03", FORMAT(CheckDigitL));
+
+      TmpCode128L.FINDFIRST;
+      CharL := TmpCode128L."Int 01";
+      BarcodeTxt += FORMAT(CharL);
+
+      // Add stop character
+      TmpCode128L.GET('STOP');
+      CharL := TmpCode128L."Int 01";
+      BarcodeTxt += FORMAT(CharL);
+      ReturnTxtR := BarcodeTxt;
+    END;
+
+    BEGIN
+    {
+      PPS 11.04.2022 Barcode management Codeunit:
+                     EncodeCode128 - create C128 format barcode,
+                     EncodeCode39 - create C39 format barcode,
+                     EncodeEAN13 - create EAN13 format barcode,
+                     EncodeEAN8 - create EAN8 format barcode;
+    }
+    END.
+  }
+}
+
