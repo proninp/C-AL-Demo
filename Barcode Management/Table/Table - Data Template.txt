@@ -1,0 +1,112 @@
+OBJECT Table 99016 Data Template
+{
+  OBJECT-PROPERTIES
+  {
+    Date=29.03.22;
+    Time=14:08:36;
+    Modified=Yes;
+    Version List=PPS;
+  }
+  PROPERTIES
+  {
+    OnInsert=BEGIN
+               IF NewID = '' THEN
+                 NewID := '000000001'
+               ELSE
+                 NewID := INCSTR(NewID);
+               "Code 01" := NewID;
+             END;
+
+    CaptionML=[ENU=Data Template];
+  }
+  FIELDS
+  {
+    { 1   ;   ;Code 01             ;Code50        ;DataClassification=ToBeClassified }
+    { 10  ;   ;Code 02             ;Code50        ;DataClassification=ToBeClassified }
+    { 20  ;   ;Code 03             ;Code50        ;DataClassification=ToBeClassified }
+    { 30  ;   ;Code 04             ;Code50        ;DataClassification=ToBeClassified }
+    { 40  ;   ;Code 05             ;Code50        ;DataClassification=ToBeClassified }
+    { 50  ;   ;Code 06             ;Code20        ;DataClassification=ToBeClassified }
+    { 60  ;   ;Code 07             ;Code20        ;DataClassification=ToBeClassified }
+    { 70  ;   ;Code 08             ;Code20        ;DataClassification=ToBeClassified }
+    { 80  ;   ;Code 09             ;Code20        ;DataClassification=ToBeClassified }
+    { 90  ;   ;Code 10             ;Code20        ;DataClassification=ToBeClassified }
+    { 200 ;   ;Text 01             ;Text100       ;DataClassification=ToBeClassified }
+    { 210 ;   ;Text 02             ;Text100       ;DataClassification=ToBeClassified }
+    { 220 ;   ;Text 03             ;Text100       ;DataClassification=ToBeClassified }
+    { 230 ;   ;Text 04             ;Text100       ;DataClassification=ToBeClassified }
+    { 240 ;   ;Text 05             ;Text100       ;DataClassification=ToBeClassified }
+    { 250 ;   ;Text 06             ;Text100       ;DataClassification=ToBeClassified }
+    { 260 ;   ;Text 07             ;Text100       ;DataClassification=ToBeClassified }
+    { 270 ;   ;Text 08             ;Text100       ;DataClassification=ToBeClassified }
+    { 280 ;   ;Text 09             ;Text100       ;DataClassification=ToBeClassified }
+    { 290 ;   ;Text 10             ;Text2048      ;DataClassification=ToBeClassified;
+                                                   Description=khv 150>2048 }
+    { 300 ;   ;Text 11             ;Text250       ;DataClassification=ToBeClassified }
+    { 310 ;   ;Text 12             ;Text250       ;DataClassification=ToBeClassified }
+    { 320 ;   ;Text 13             ;Text250       ;DataClassification=ToBeClassified }
+    { 330 ;   ;Text 14             ;Text250       ;DataClassification=ToBeClassified }
+    { 340 ;   ;Text 15             ;Text250       ;DataClassification=ToBeClassified }
+    { 400 ;   ;Text 20             ;Text2048      ;DataClassification=ToBeClassified;
+                                                   Description=khv 1024>2048 }
+    { 500 ;   ;Dec 01              ;Decimal       ;DataClassification=ToBeClassified }
+    { 510 ;   ;Dec 02              ;Decimal       ;DataClassification=ToBeClassified }
+    { 520 ;   ;Dec 03              ;Decimal       ;DataClassification=ToBeClassified }
+    { 530 ;   ;Dec 04              ;Decimal       ;DataClassification=ToBeClassified }
+    { 540 ;   ;Dec 05              ;Decimal       ;DataClassification=ToBeClassified }
+    { 550 ;   ;Dec 06              ;Decimal       ;DataClassification=ToBeClassified }
+    { 560 ;   ;Dec 07              ;Decimal       ;DataClassification=ToBeClassified }
+    { 570 ;   ;Dec 08              ;Decimal       ;DataClassification=ToBeClassified }
+    { 580 ;   ;Dec 09              ;Decimal       ;DataClassification=ToBeClassified }
+    { 590 ;   ;Dec 10              ;Decimal       ;DataClassification=ToBeClassified }
+    { 700 ;   ;Int 01              ;Integer       ;DataClassification=ToBeClassified }
+    { 710 ;   ;Int 02              ;Integer       ;DataClassification=ToBeClassified }
+    { 720 ;   ;Int 03              ;Integer       ;DataClassification=ToBeClassified }
+    { 730 ;   ;Int 04              ;Integer       ;DataClassification=ToBeClassified }
+    { 740 ;   ;Int 05              ;Integer       ;DataClassification=ToBeClassified }
+    { 750 ;   ;Int 06              ;Integer       ;DataClassification=ToBeClassified }
+    { 760 ;   ;Int 07              ;Integer       ;DataClassification=ToBeClassified }
+    { 770 ;   ;Int 08              ;Integer       ;DataClassification=ToBeClassified }
+    { 780 ;   ;Int 09              ;Integer       ;DataClassification=ToBeClassified }
+    { 790 ;   ;Int 10              ;Integer       ;DataClassification=ToBeClassified }
+    { 900 ;   ;Date 01             ;Date          ;DataClassification=ToBeClassified }
+    { 920 ;   ;Date 02             ;Date          ;DataClassification=ToBeClassified }
+    { 930 ;   ;Date 03             ;Date          ;DataClassification=ToBeClassified }
+    { 940 ;   ;Date 04             ;Date          ;DataClassification=ToBeClassified }
+    { 950 ;   ;Date 05             ;Date          ;DataClassification=ToBeClassified }
+    { 1000;   ;Time 01             ;Time          ;DataClassification=ToBeClassified }
+    { 1010;   ;Time 02             ;Time          ;DataClassification=ToBeClassified }
+    { 1100;   ;Bool 01             ;Boolean       ;DataClassification=ToBeClassified }
+    { 1110;   ;Bool 02             ;Boolean       ;DataClassification=ToBeClassified }
+    { 1120;   ;Bool 03             ;Boolean       ;DataClassification=ToBeClassified }
+    { 1130;   ;Bool 04             ;Boolean       ;DataClassification=ToBeClassified }
+    { 1140;   ;Bool 05             ;Boolean       ;DataClassification=ToBeClassified }
+    { 1150;   ;Bool 06             ;Boolean       ;DataClassification=ToBeClassified }
+    { 1160;   ;Bool 07             ;Boolean       ;DataClassification=ToBeClassified }
+    { 1170;   ;Bool 08             ;Boolean       ;DataClassification=ToBeClassified }
+    { 1180;   ;Bool 09             ;Boolean       ;DataClassification=ToBeClassified }
+    { 1190;   ;Bool 10             ;Boolean       ;DataClassification=ToBeClassified }
+    { 1200;   ;Bool 11             ;Boolean       ;DataClassification=ToBeClassified }
+    { 1210;   ;Bool 12             ;Boolean       ;DataClassification=ToBeClassified }
+    { 1400;   ;Blob 01             ;BLOB          ;DataClassification=ToBeClassified }
+  }
+  KEYS
+  {
+    {    ;Code 01                                 ;Clustered=Yes }
+    {    ;Code 02,Code 03                          }
+  }
+  FIELDGROUPS
+  {
+  }
+  CODE
+  {
+    VAR
+      NewID@1000000000 : Code[50];
+
+    BEGIN
+    {
+    }
+    END.
+  }
+}
+
