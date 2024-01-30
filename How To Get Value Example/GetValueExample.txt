@@ -1,0 +1,120 @@
+OBJECT Codeunit 50000 Codeunit 50000
+{
+  OBJECT-PROPERTIES
+  {
+    Date=30.01.24;
+    Time=16:21:19;
+    Modified=Yes;
+    Version List=;
+  }
+  PROPERTIES
+  {
+    OnRun=BEGIN
+          END;
+
+  }
+  CODE
+  {
+
+    PROCEDURE GeneralFunction@1000000000(ValueP@1000000000 : Integer);
+    VAR
+      MagicValue@1000000001 : Integer;
+    BEGIN
+      MagicValue := ValueP + 100;
+      OnAfterSetMagicValue(MagicValue);
+    END;
+
+    [Integration]
+    LOCAL PROCEDURE OnAfterSetMagicValue@1000000002(MagicValueP@1000000000 : Integer);
+    BEGIN
+    END;
+
+    BEGIN
+    END.
+  }
+}
+
+OBJECT Codeunit 50001 Codeunit 50001
+{
+  OBJECT-PROPERTIES
+  {
+    Date=30.01.24;
+    Time=16:24:32;
+    Modified=Yes;
+    Version List=;
+  }
+  PROPERTIES
+  {
+    OnRun=BEGIN
+            TestGetMagicValueWithSubscription();
+          END;
+
+  }
+  CODE
+  {
+
+    LOCAL PROCEDURE TestGetMagicValueWithSubscription@1000000000();
+    VAR
+      Codeunit50000@1000000000 : Codeunit 50000;
+      Codeunit50002@1000000001 : Codeunit 50002;
+      SeekValueBinded@1000000002 : Integer;
+      SeekValueUnBinded@1000000003 : Integer;
+    BEGIN
+      BINDSUBSCRIPTION(Codeunit50002);
+      Codeunit50000.GeneralFunction(50);
+      UNBINDSUBSCRIPTION(Codeunit50002);
+      SeekValueBinded := Codeunit50002.GetMagicValue();
+
+      Codeunit50000.GeneralFunction(50);
+      SeekValueUnBinded := Codeunit50002.GetMagicValue();
+
+      MESSAGE('Binded: %1; UnBinded: %2', SeekValueBinded, SeekValueUnBinded);
+    END;
+
+    BEGIN
+    END.
+  }
+}
+
+OBJECT Codeunit 50002 Codeunit 50002
+{
+  OBJECT-PROPERTIES
+  {
+    Date=30.01.24;
+    Time=16:22:54;
+    Modified=Yes;
+    Version List=;
+  }
+  PROPERTIES
+  {
+    SingleInstance=Yes;
+    EventSubscriberInstance=Manual;
+    OnRun=BEGIN
+          END;
+
+  }
+  CODE
+  {
+    VAR
+      MagicValueG@1000000000 : Integer;
+
+    [EventSubscriber(Codeunit,50000,OnAfterSetMagicValue)]
+    LOCAL PROCEDURE OnCodeunit50000OnAfterSetMagicValue@1000000001(MagicValueP@1000000000 : Integer);
+    BEGIN
+      MagicValueG := MagicValueP;
+    END;
+
+    PROCEDURE GetMagicValue@1000000003() : Integer;
+    VAR
+      Value@1000000000 : Integer;
+    BEGIN
+      Value := MagicValueG;
+      CLEAR(MagicValueG);
+      EXIT(Value);
+    END;
+
+    BEGIN
+    END.
+  }
+}
+
